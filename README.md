@@ -21,10 +21,10 @@ A Jai-inspired systems programming language built while developing a 2D fantasy 
 ## 🚀 Planned Language Features
 
 ### **1: Bootstrap**
-- [x] Basic lexer and parser
-- [x] Procedures and variables (`main :: () { x := 42; }`)
-- [x] C code generation
-- [x] Simple expressions and function calls
+- [ ] Basic lexer and parser
+- [ ] Procedures and variables (`main :: () { x := 42; }`)
+- [ ] C code generation
+- [ ] Simple expressions and function calls
 
 ### **2: Memory & Graphics**
 - [ ] Structs and member access
