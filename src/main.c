@@ -1,5 +1,4 @@
 #define ARENA_IMPLEMENTATION
-#include <arena.h>
 #include <cmpl.h>
 
 int main() 

@@ -1,7 +1,6 @@
 #define LEXER_DEF
 #include <cmpl.h>
 
-#define ARENA_IMPLEMENTATION
 #include <arena.h>
 
 #include <stdbool.h>

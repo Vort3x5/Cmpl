@@ -10,10 +10,8 @@ bool BuildComponent(const char *name, const char *src)
     nob_cc_flags(&cmd);
     nob_cmd_append(&cmd, "-I", "include");
     nob_cc_output(&cmd, nob_temp_sprintf("out/%s", name));
-    
-    nob_cmd_append(&cmd, nob_temp_sprintf("src/%s.c", name));
+	nob_cmd_append(&cmd, "src/main.c");
 	nob_cmd_append(&cmd, src);
-    
     return nob_cmd_run(&cmd);
 }
 
@@ -48,7 +46,6 @@ int main(int argc, char **argv) {
     if (argc < 2) 
 	{
         nob_log(NOB_INFO, "Usage: %s <command> [args...]", argv[0]);
-        nob_log(NOB_INFO, "Commands:");
         return 1;
     }
     
