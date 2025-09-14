@@ -358,7 +358,7 @@ Token LexerPeekToken(Lexer* lexer)
 void LexerPrintToken(Token token) 
 {
     printf("Token{type=%s, lexeme=\"%s\", line=%zu, col=%zu", 
-           type_names[token.type], 
+           token_names[token.type], 
            token.lexeme ? token.lexeme : "",
            token.line, 
            token.column

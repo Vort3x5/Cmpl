@@ -34,13 +34,14 @@ bool BuildAll()
     
     nob_cmd_append(&cmd, "src/main.c");
     nob_cmd_append(&cmd, "src/lexer.c");
-    // nob_cmd_append(&cmd, "src/parser.c");   // Uncomment when ready
+    nob_cmd_append(&cmd, "src/parser.c");
     // nob_cmd_append(&cmd, "src/ast.c");      // Uncomment when ready
     
     return nob_cmd_run(&cmd);
 }
 
-int main(int argc, char **argv) {
+int main(int argc, char **argv) 
+{
     NOB_GO_REBUILD_URSELF(argc, argv);
     
     if (argc < 2) 

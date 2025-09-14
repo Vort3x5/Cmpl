@@ -101,8 +101,18 @@ typedef struct {
 	Arena *arena;
 } Lexer;
 
+typedef struct 
+{
+    Lexer *lexer;
+    Token curr;
+    Token prev;
+    Arena *arena;
+    bool had_err;
+    bool panic_mode;
+} Parser;
+
 #ifdef LEXER_DEF
-    const char* type_names[] = {
+    const char* token_names[] = {
         [TOKEN_EOF] = "EOF",
         [TOKEN_ID] = "IDENTIFIER",
         [TOKEN_NUM] = "NUMBER",
@@ -138,8 +148,29 @@ typedef struct {
     };
 #endif
 
+#ifdef PARSER_DEF
+	const char* ast_names[] = {
+		[AST_PROGRAM] = "PROGRAM",
+		[AST_PROC] = "PROCEDURE",
+		[AST_VAR] = "VARIABLE", 
+		[AST_ASSIGNMENT] = "ASSIGNMENT",
+		[AST_BIN_OP] = "BINARY_OPERATION",
+		[AST_CALL] = "CALL",
+		[AST_BLOCK] = "BLOCK",
+		[AST_NUM] = "NUMBER",
+		[AST_ID] = "IDENTIFIER"
+	};
+#endif
+
 Lexer* LexerCreate(const char* src, Arena* arena);
 Token LexerNextToken(Lexer* lexer);
 Token LexerPeekToken(Lexer* lexer);
 void LexerPrintToken(Token token);
 void LexerDumpTokenize(const char* src, Arena* arena);
+
+Parser* ParserCreate(Lexer* lexer, Arena* arena);
+AST_Node* ParserParseProgram(Parser* parser);
+bool ParserHadError(Parser* parser);
+
+void ASTPrintNode(AST_Node* node, int depth);
+void ASTPrintProgram(AST_Node* program);
