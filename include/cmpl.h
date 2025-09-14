@@ -28,13 +28,28 @@ typedef enum {
 	TOKEN_R_PAREN,
 	TOKEN_L_BRACE,
 	TOKEN_R_BRACE,
+	TOKEN_L_BRACKET,
+	TOKEN_R_BRACKET,
 	TOKEN_SEMICOLON,
 	TOKEN_COMMA,
+	TOKEN_DOT,
 	TOKEN_PLUS,
 	TOKEN_MINUS,
 	TOKEN_MUL,
 	TOKEN_DIV,
-	TOKEN_ERR
+	TOKEN_MOD,
+	TOKEN_NOT,
+	TOKEN_EQ,
+	TOKEN_NOT_EQ,
+	TOKEN_LESS_EQ,
+	TOKEN_LESS,
+	TOKEN_GREATER_EQ,
+	TOKEN_GREATER,
+	TOKEN_AMPERSAND,
+	TOKEN_PIPE,
+	TOKEN_CARET,
+	TOKEN_TILDE,
+	TOKEN_ERR,
 } Token_Type;
 
 typedef struct {
@@ -86,3 +101,40 @@ typedef struct {
 	u32 line, column;
 	Arena *arena;
 } Lexer;
+
+#ifdef LEXER_DEF
+    const char* type_names[] = {
+        [TOKEN_EOF] = "EOF",
+        [TOKEN_IDENTIFIER] = "IDENTIFIER",
+        [TOKEN_NUMBER] = "NUMBER",
+        [TOKEN_STRING] = "STRING",
+        [TOKEN_PROCEDURE] = "PROCEDURE",
+        [TOKEN_ASSIGN] = "ASSIGN",
+        [TOKEN_EQUAL] = "EQUAL",
+        [TOKEN_NOT_EQUAL] = "NOT_EQUAL",
+        [TOKEN_NOT] = "NOT",
+        [TOKEN_LESS] = "LESS",
+        [TOKEN_LESS_EQUAL] = "LESS_EQUAL",
+        [TOKEN_GREATER] = "GREATER",
+        [TOKEN_GREATER_EQUAL] = "GREATER_EQUAL",
+        [TOKEN_LPAREN] = "LPAREN",
+        [TOKEN_RPAREN] = "RPAREN",
+        [TOKEN_LBRACE] = "LBRACE",
+        [TOKEN_RBRACE] = "RBRACE",
+        [TOKEN_LBRACKET] = "LBRACKET",
+        [TOKEN_RBRACKET] = "RBRACKET",
+        [TOKEN_SEMICOLON] = "SEMICOLON",
+        [TOKEN_COMMA] = "COMMA",
+        [TOKEN_DOT] = "DOT",
+        [TOKEN_PLUS] = "PLUS",
+        [TOKEN_MINUS] = "MINUS",
+        [TOKEN_MULTIPLY] = "MULTIPLY",
+        [TOKEN_DIVIDE] = "DIVIDE",
+        [TOKEN_MODULO] = "MODULO",
+        [TOKEN_AMPERSAND] = "AMPERSAND",
+        [TOKEN_PIPE] = "PIPE",
+        [TOKEN_CARET] = "CARET",
+        [TOKEN_TILDE] = "TILDE",
+        [TOKEN_ERROR] = "ERROR"
+    };
+#endif

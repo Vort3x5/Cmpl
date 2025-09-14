@@ -1,8 +1,10 @@
+#define LEXER_DEF
 #include <cmpl.h>
 
 #include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
+#include <assert.h>
 
 static inline bool IsAlpha(char c)
 	{ return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_'; }
@@ -35,7 +37,7 @@ static inline char LexerNextC(Lexer *lexer)
 	if (lexer->current >= lexer->length)
 		return '\0';
 
-	char c = lexer->source[lexer->current++];
+	char c = lexer->src[lexer->current++];
 	if (c == '\n')
 	{
 		++(lexer->line);
@@ -105,7 +107,7 @@ static Token LexerScanIds(Lexer *lexer)
 {
 	u32 start_line = lexer->line;
 	u32 start_column = lexer->column;
-	size_t start = lexer->current - 1;
+	size_t start = lexer->current - 1; // First character already consumed
 
 	while (IsAlNum(LexerPeek(lexer)))
 		LexerNextC(lexer);
@@ -125,7 +127,7 @@ static Token LexerScanNum(Lexer *lexer)
 {
 	u32 start_line = lexer->line;
 	u32 start_column = lexer->column;
-	size_t start = lexer->current - 1;
+	size_t start = lexer->current - 1; // First digit already consumed
 
 	// TODO: Handle floating point numbers
 	while (IsDigit(LexerPeek(lexer)))
@@ -133,7 +135,7 @@ static Token LexerScanNum(Lexer *lexer)
 
 	size_t length = lexer->current - start;
     char* lexeme = arena_alloc(lexer->arena, length + 1);
-    memcpy(lexeme, &(lexer->source[start]), length);
+    memcpy(lexeme, &(lexer->src[start]), length);
     lexeme[length] = '\0';
     
     Token token = LexerMakeToken(lexer, TOKEN_NUMBER, lexeme, start_line, start_column);
@@ -143,4 +145,244 @@ static Token LexerScanNum(Lexer *lexer)
         token.value.number = token.value.number * 10 + (lexeme[i] - '0');
     
     return token;
+}
+
+static Token LexerScanStr(Lexer* lexer) 
+{
+	u32 start_line = lexer->line;
+	u32 start_column = lexer->column;
+	size_t start = lexer->current; // " character consumed
+    
+    while (LexerPeek(lexer) != '"' && LexerPeek(lexer) != '\0') 
+	{
+		// TODO: Multiline strings
+        if (LexerPeek(lexer) == '\n')
+            return LexerMakeToken(lexer, TOKEN_ERROR, "Unterminated string", start_line, start_column);
+        
+        if (LexerPeek(lexer) == '\\') 
+		{
+            LexerNextC(lexer);
+            if (LexerPeek(lexer) != '\0') 
+                LexerNextC(lexer);
+        } 
+		else 
+            LexerNextC(lexer);
+    }
+    
+    if (LexerPeek(lexer) == '\0') 
+        return LexerMakeToken(lexer, TOKEN_ERROR, "Unterminated string", start_line, start_column);
+    
+    // Extract string content (without quotes)
+    size_t length = lexer->current - start;
+    char* content = arena_alloc(lexer->arena, length + 1);
+    memcpy(content, &(lexer->src[start]), length);
+    content[length] = '\0';
+    
+    char* processed = arena_alloc(lexer->arena, length + 1);
+    size_t write_pos = 0;
+    for (size_t read_pos = 0; read_pos < length; ++read_pos) 
+	{
+        if (content[read_pos] == '\\' && read_pos + 1 < length) 
+		{
+            switch (content[read_pos + 1]) 
+			{
+                case 'n': 
+					processed[++write_pos] = '\n';
+					++read_pos;
+					break;
+                case 't': 
+					processed[++write_pos] = '\t';
+					++read_pos;
+					break;
+                case 'r': 
+					processed[++write_pos] = '\r';
+					++read_pos;
+					break;
+                case '\\':
+					processed[++write_pos] = '\\';
+					++read_pos;
+					break;
+                case '"': 
+					processed[++write_pos] = '"';
+					++read_pos;
+					break;
+                default: 
+					processed[++write_pos] = content[read_pos]; 
+					break;
+            }
+        } 
+		else
+            processed[++write_pos] = content[read_pos];
+    }
+    processed[write_pos] = '\0';
+    LexerNextC(lexer); // consume closing quote
+    
+    Token token = LexerMakeToken(lexer, TOKEN_STRING, content, start_line, start_column);
+    token.value.string = processed;
+    return token;
+}
+
+Lexer* LexerCreate(const char* src, Arena* arena) 
+{
+    assert(src != NULL);
+    assert(arena != NULL);
+    
+    Lexer* lexer = arena_alloc(arena, sizeof(Lexer));
+	lexer = (Lexer *){
+		.src = src,
+		.current = 0,
+		.length = strlen(src),
+		.line = 1,
+		.column = 1,
+		.arena = arena,
+	};
+    return lexer;
+}
+
+Token LexerNextToken(Lexer* lexer) 
+{
+    assert(lexer != NULL);
+    LexerSkipWhitespace(lexer);
+    int start_line = lexer->line;
+    int start_column = lexer->column;
+    
+    char c = LexerNextC(lexer);
+    if (c == '\0') 
+        return LexerMakeToken(lexer, TOKEN_EOF, "", start_line, start_column);
+    
+    if (IsAlpha(c)) 
+        return LexerScanIds(lexer);
+    
+    if (IsDigit(c))
+        return LexerScanNum(lexer);
+    
+    if (c == '"')
+        return LexerScanStr(lexer);
+    
+    switch (c) 
+	{
+        case ':':
+            if (LexerPeek(lexer) == ':') 
+			{
+                LexerNextC(lexer);
+                return LexerMakeToken(lexer, TOKEN_PROC, "::", start_line, start_column);
+            } 
+			else if (LexerPeek(lexer) == '=') 
+			{
+                LexerNextC(lexer);
+                return LexerMakeToken(lexer, TOKEN_ASSIGN, ":=", start_line, start_column);
+            } 
+			else
+                return LexerMakeToken(lexer, TOKEN_ERR, "Unexpected character", start_line, start_column);
+            
+        case '=':
+            if (LexerPeek(lexer) == '=') 
+			{
+                LexerNextC(lexer);
+                return LexerMakeToken(lexer, TOKEN_EQ, "==", start_line, start_column);
+            } 
+			else 
+                return LexerMakeToken(lexer, TOKEN_ERR, "Single '=' not supported, use ':=' for assignment", start_line, start_column);
+            
+        case '!':
+            if (LexerPeek(lexer) == '=') 
+			{
+                LexerNextC(lexer);
+                return LexerMakeToken(lexer, TOKEN_NOT_EQ, "!=", start_line, start_column);
+            } 
+			else 
+                return LexerMakeToken(lexer, TOKEN_NOT, "!", start_line, start_column);
+            
+        case '<':
+            if (LexerPeek(lexer) == '=') 
+			{
+                LexerNextC(lexer);
+                return LexerMakeToken(lexer, TOKEN_LESS_EQ, "<=", start_line, start_column);
+            } 
+			else 
+                return LexerMakeToken(lexer, TOKEN_LESS, "<", start_line, start_column);
+            
+        case '>':
+            if (LexerPeek(lexer) == '=') 
+			{
+                LexerNextC(lexer);
+                return LexerMakeToken(lexer, TOKEN_GREATER_EQ, ">=", start_line, start_column);
+            } 
+			else 
+                return LexerMakeToken(lexer, TOKEN_GREATER, ">", start_line, start_column);
+    }
+    
+    switch (c) 
+	{
+        case '(': return LexerMakeToken(lexer, TOKEN_L_PAREN, "(", start_line, start_column);
+        case ')': return LexerMakeToken(lexer, TOKEN_R_PAREN, ")", start_line, start_column);
+        case '{': return LexerMakeToken(lexer, TOKEN_L_BRACE, "{", start_line, start_column);
+        case '}': return LexerMakeToken(lexer, TOKEN_R_BRACE, "}", start_line, start_column);
+        case '[': return LexerMakeToken(lexer, TOKEN_L_BRACKET, "[", start_line, start_column);
+        case ']': return LexerMakeToken(lexer, TOKEN_R_BRACKET, "]", start_line, start_column);
+        case ';': return LexerMakeToken(lexer, TOKEN_SEMICOLON, ";", start_line, start_column);
+        case ',': return LexerMakeToken(lexer, TOKEN_COMMA, ",", start_line, start_column);
+        case '.': return LexerMakeToken(lexer, TOKEN_DOT, ".", start_line, start_column);
+        case '+': return LexerMakeToken(lexer, TOKEN_PLUS, "+", start_line, start_column);
+        case '-': return LexerMakeToken(lexer, TOKEN_MINUS, "-", start_line, start_column);
+        case '*': return LexerMakeToken(lexer, TOKEN_MUL, "*", start_line, start_column);
+        case '/': return LexerMakeToken(lexer, TOKEN_DIV, "/", start_line, start_column);
+        case '%': return LexerMakeToken(lexer, TOKEN_MOD, "%", start_line, start_column);
+        case '&': return LexerMakeToken(lexer, TOKEN_AMPERSAND, "&", start_line, start_column);
+        case '|': return LexerMakeToken(lexer, TOKEN_PIPE, "|", start_line, start_column);
+        case '^': return LexerMakeToken(lexer, TOKEN_CARET, "^", start_line, start_column);
+        case '~': return LexerMakeToken(lexer, TOKEN_TILDE, "~", start_line, start_column);
+    }
+    
+    char unknown[2] = {c, '\0'};
+    return LexerMakeToken(lexer, TOKEN_ERR, unknown, start_line, start_column);
+}
+
+Token LexerPeekToken(Lexer* lexer) 
+{
+    size_t saved_current = lexer->current;
+    int saved_line = lexer->line;
+    int saved_column = lexer->column;
+    
+    Token token = LexerNextToken(lexer);
+    
+    lexer->current = saved_current;
+    lexer->line = saved_line;
+    lexer->column = saved_column;
+    
+    return token;
+}
+
+void LexerPrintToken(Token token) 
+{
+    printf("Token{type=%s, lexeme=\"%s\", line=%d, col=%d", 
+           type_names[token.type], 
+           token.lexeme ? token.lexeme : "",
+           token.line, 
+           token.column
+		   );
+    
+    if (token.type == TOKEN_NUMBER) 
+        printf(", value=%lld", token.value.number);
+	else if (token.type == TOKEN_STRING) 
+        printf(", string=\"%s\"", token.value.string ? token.value.string : "");
+    printf("}\n");
+}
+
+void LexerDumpTokenize(const char* src, Arena* arena) 
+{
+    printf("=== LEXER DUMP OUTPUT ===\n");
+    printf("Source: %s\n", src);
+    printf("Tokens:\n");
+    
+    Lexer* lexer = LexerCreate(src, arena);
+    Token token;
+    do 
+	{
+        token = LexerNextToken(lexer);
+        printf("  ");
+        LexerPrintToken(token);
+    } while (token.type != TOKEN_EOF && token.type != TOKEN_ERROR);
+    
+    printf("=== END DUMP OUTPUT ===\n\n");
 }
