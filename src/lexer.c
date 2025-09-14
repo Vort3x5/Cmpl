@@ -1,6 +1,9 @@
 #define LEXER_DEF
 #include <cmpl.h>
 
+#define ARENA_IMPLEMENTATION
+#include <arena.h>
+
 #include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
@@ -34,10 +37,10 @@ static inline char LexerPeekNext(Lexer *lexer)
 
 static inline char LexerNextC(Lexer *lexer)
 {
-	if (lexer->current >= lexer->length)
+	if (lexer->curr >= lexer->len)
 		return '\0';
 
-	char c = lexer->src[lexer->current++];
+	char c = lexer->src[lexer->curr++];
 	if (c == '\n')
 	{
 		++(lexer->line);
@@ -67,11 +70,11 @@ static void LexerSkipWhitespace(Lexer *lexer)
 			LexerNextC(lexer);
 			while (true)
 			{
-				char current = LexerPeek(lexer);
-				if (current == '\0')
+				char curr = LexerPeek(lexer);
+				if (curr == '\0')
 					break;
 
-				if (current == '*' && LexerPeekNext(lexer) == '/')
+				if (curr == '*' && LexerPeekNext(lexer) == '/')
 				{
 					LexerNextC(lexer);
 					LexerNextC(lexer);
@@ -107,15 +110,15 @@ static Token LexerScanIds(Lexer *lexer)
 {
 	u32 start_line = lexer->line;
 	u32 start_column = lexer->column;
-	size_t start = lexer->current - 1; // First character already consumed
+	size_t start = lexer->curr - 1; // First character already consumed
 
 	while (IsAlNum(LexerPeek(lexer)))
 		LexerNextC(lexer);
 
-	size_t length = lexer->curr - start;
-	char *lexeme = arena_alloc(lexer->arena, length + 1);
-	memcpy(lexeme, &(lexer->soure[start]), length);
-	lexeme[length] = '\0';
+	size_t len = lexer->curr - start;
+	char *lexeme = arena_alloc(lexer->arena, len + 1);
+	memcpy(lexeme, &(lexer->src[start]), len);
+	lexeme[len] = '\0';
 
 	Token_Type type = TOKEN_ID;
 
@@ -127,22 +130,22 @@ static Token LexerScanNum(Lexer *lexer)
 {
 	u32 start_line = lexer->line;
 	u32 start_column = lexer->column;
-	size_t start = lexer->current - 1; // First digit already consumed
+	size_t start = lexer->curr - 1; // First digit already consumed
 
 	// TODO: Handle floating point numbers
 	while (IsDigit(LexerPeek(lexer)))
 		LexerNextC(lexer);
 
-	size_t length = lexer->current - start;
-    char* lexeme = arena_alloc(lexer->arena, length + 1);
-    memcpy(lexeme, &(lexer->src[start]), length);
-    lexeme[length] = '\0';
+	size_t len = lexer->curr - start;
+    char* lexeme = arena_alloc(lexer->arena, len + 1);
+    memcpy(lexeme, &(lexer->src[start]), len);
+    lexeme[len] = '\0';
     
-    Token token = LexerMakeToken(lexer, TOKEN_NUMBER, lexeme, start_line, start_column);
+    Token token = LexerMakeToken(lexer, TOKEN_NUM, lexeme, start_line, start_column);
     
-    token.value.number = 0;
-    for (size_t i = 0; i < length; ++i)
-        token.value.number = token.value.number * 10 + (lexeme[i] - '0');
+    token.value.num = 0;
+    for (size_t i = 0; i < len; ++i)
+        token.value.num = token.value.num * 10 + (lexeme[i] - '0');
     
     return token;
 }
@@ -151,13 +154,13 @@ static Token LexerScanStr(Lexer* lexer)
 {
 	u32 start_line = lexer->line;
 	u32 start_column = lexer->column;
-	size_t start = lexer->current; // " character consumed
+	size_t start = lexer->curr; // " character consumed
     
     while (LexerPeek(lexer) != '"' && LexerPeek(lexer) != '\0') 
 	{
 		// TODO: Multiline strings
         if (LexerPeek(lexer) == '\n')
-            return LexerMakeToken(lexer, TOKEN_ERROR, "Unterminated string", start_line, start_column);
+            return LexerMakeToken(lexer, TOKEN_ERR, "Unterminated str", start_line, start_column);
         
         if (LexerPeek(lexer) == '\\') 
 		{
@@ -170,19 +173,19 @@ static Token LexerScanStr(Lexer* lexer)
     }
     
     if (LexerPeek(lexer) == '\0') 
-        return LexerMakeToken(lexer, TOKEN_ERROR, "Unterminated string", start_line, start_column);
+        return LexerMakeToken(lexer, TOKEN_ERR, "Unterminated str", start_line, start_column);
     
-    // Extract string content (without quotes)
-    size_t length = lexer->current - start;
-    char* content = arena_alloc(lexer->arena, length + 1);
-    memcpy(content, &(lexer->src[start]), length);
-    content[length] = '\0';
+    // Extract str content (without quotes)
+    size_t len = lexer->curr - start;
+    char* content = arena_alloc(lexer->arena, len + 1);
+    memcpy(content, &(lexer->src[start]), len);
+    content[len] = '\0';
     
-    char* processed = arena_alloc(lexer->arena, length + 1);
+    char* processed = arena_alloc(lexer->arena, len + 1);
     size_t write_pos = 0;
-    for (size_t read_pos = 0; read_pos < length; ++read_pos) 
+    for (size_t read_pos = 0; read_pos < len; ++read_pos) 
 	{
-        if (content[read_pos] == '\\' && read_pos + 1 < length) 
+        if (content[read_pos] == '\\' && read_pos + 1 < len) 
 		{
             switch (content[read_pos + 1]) 
 			{
@@ -217,8 +220,8 @@ static Token LexerScanStr(Lexer* lexer)
     processed[write_pos] = '\0';
     LexerNextC(lexer); // consume closing quote
     
-    Token token = LexerMakeToken(lexer, TOKEN_STRING, content, start_line, start_column);
-    token.value.string = processed;
+    Token token = LexerMakeToken(lexer, TOKEN_STR, content, start_line, start_column);
+    token.value.str = processed;
     return token;
 }
 
@@ -228,10 +231,10 @@ Lexer* LexerCreate(const char* src, Arena* arena)
     assert(arena != NULL);
     
     Lexer* lexer = arena_alloc(arena, sizeof(Lexer));
-	lexer = (Lexer *){
+	*lexer = (Lexer){
 		.src = src,
-		.current = 0,
-		.length = strlen(src),
+		.curr = 0,
+		.len = strlen(src),
 		.line = 1,
 		.column = 1,
 		.arena = arena,
@@ -340,13 +343,13 @@ Token LexerNextToken(Lexer* lexer)
 
 Token LexerPeekToken(Lexer* lexer) 
 {
-    size_t saved_current = lexer->current;
+    size_t saved_current = lexer->curr;
     int saved_line = lexer->line;
     int saved_column = lexer->column;
     
     Token token = LexerNextToken(lexer);
     
-    lexer->current = saved_current;
+    lexer->curr = saved_current;
     lexer->line = saved_line;
     lexer->column = saved_column;
     
@@ -355,17 +358,17 @@ Token LexerPeekToken(Lexer* lexer)
 
 void LexerPrintToken(Token token) 
 {
-    printf("Token{type=%s, lexeme=\"%s\", line=%d, col=%d", 
+    printf("Token{type=%s, lexeme=\"%s\", line=%zu, col=%zu", 
            type_names[token.type], 
            token.lexeme ? token.lexeme : "",
            token.line, 
            token.column
 		   );
     
-    if (token.type == TOKEN_NUMBER) 
-        printf(", value=%lld", token.value.number);
-	else if (token.type == TOKEN_STRING) 
-        printf(", string=\"%s\"", token.value.string ? token.value.string : "");
+    if (token.type == TOKEN_NUM) 
+        printf(", value=%lld", token.value.num);
+	else if (token.type == TOKEN_STR) 
+        printf(", str=\"%s\"", token.value.str ? token.value.str : "");
     printf("}\n");
 }
 
@@ -382,7 +385,7 @@ void LexerDumpTokenize(const char* src, Arena* arena)
         token = LexerNextToken(lexer);
         printf("  ");
         LexerPrintToken(token);
-    } while (token.type != TOKEN_EOF && token.type != TOKEN_ERROR);
+    } while (token.type != TOKEN_EOF && token.type != TOKEN_ERR);
     
     printf("=== END DUMP OUTPUT ===\n\n");
 }

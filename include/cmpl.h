@@ -1,5 +1,4 @@
-#ifndef CMPL_H
-#define CMPL_H
+#pragma once
 
 #include <arena.h>
 
@@ -76,6 +75,11 @@ typedef enum {
 
 typedef struct AST_Node AST_Node;
 
+typedef struct {
+	AST_Node **data;
+	size_t size, used;
+} AST_Array;
+
 struct AST_Node 
 {
 	AST_Type type;
@@ -91,11 +95,6 @@ struct AST_Node
 };
 
 typedef struct {
-	AST_Node **data;
-	size_t size, used;
-} AST_Array;
-
-typedef struct {
 	const char *src;
 	size_t curr, len;
 	u32 line, column;
@@ -105,36 +104,42 @@ typedef struct {
 #ifdef LEXER_DEF
     const char* type_names[] = {
         [TOKEN_EOF] = "EOF",
-        [TOKEN_IDENTIFIER] = "IDENTIFIER",
-        [TOKEN_NUMBER] = "NUMBER",
-        [TOKEN_STRING] = "STRING",
-        [TOKEN_PROCEDURE] = "PROCEDURE",
+        [TOKEN_ID] = "IDENTIFIER",
+        [TOKEN_NUM] = "NUMBER",
+        [TOKEN_STR] = "STRING",
+        [TOKEN_PROC] = "PROCEDURE",
         [TOKEN_ASSIGN] = "ASSIGN",
-        [TOKEN_EQUAL] = "EQUAL",
-        [TOKEN_NOT_EQUAL] = "NOT_EQUAL",
+        [TOKEN_EQ] = "EQUAL",
+        [TOKEN_NOT_EQ] = "NOT_EQUAL",
         [TOKEN_NOT] = "NOT",
         [TOKEN_LESS] = "LESS",
-        [TOKEN_LESS_EQUAL] = "LESS_EQUAL",
+        [TOKEN_LESS_EQ] = "LESS_EQUAL",
         [TOKEN_GREATER] = "GREATER",
-        [TOKEN_GREATER_EQUAL] = "GREATER_EQUAL",
-        [TOKEN_LPAREN] = "LPAREN",
-        [TOKEN_RPAREN] = "RPAREN",
-        [TOKEN_LBRACE] = "LBRACE",
-        [TOKEN_RBRACE] = "RBRACE",
-        [TOKEN_LBRACKET] = "LBRACKET",
-        [TOKEN_RBRACKET] = "RBRACKET",
+        [TOKEN_GREATER_EQ] = "GREATER_EQUAL",
+        [TOKEN_L_PAREN] = "LPAREN",
+        [TOKEN_R_PAREN] = "RPAREN",
+        [TOKEN_L_BRACE] = "LBRACE",
+        [TOKEN_R_BRACE] = "RBRACE",
+        [TOKEN_L_BRACKET] = "LBRACKET",
+        [TOKEN_R_BRACKET] = "RBRACKET",
         [TOKEN_SEMICOLON] = "SEMICOLON",
         [TOKEN_COMMA] = "COMMA",
         [TOKEN_DOT] = "DOT",
         [TOKEN_PLUS] = "PLUS",
         [TOKEN_MINUS] = "MINUS",
-        [TOKEN_MULTIPLY] = "MULTIPLY",
-        [TOKEN_DIVIDE] = "DIVIDE",
-        [TOKEN_MODULO] = "MODULO",
+        [TOKEN_MUL] = "MULTIPLY",
+        [TOKEN_DIV] = "DIVIDE",
+        [TOKEN_MOD] = "MODULO",
         [TOKEN_AMPERSAND] = "AMPERSAND",
         [TOKEN_PIPE] = "PIPE",
         [TOKEN_CARET] = "CARET",
         [TOKEN_TILDE] = "TILDE",
-        [TOKEN_ERROR] = "ERROR"
+        [TOKEN_ERR] = "ERROR"
     };
 #endif
+
+Lexer* LexerCreate(const char* src, Arena* arena);
+Token LexerNextToken(Lexer* lexer);
+Token LexerPeekToken(Lexer* lexer);
+void LexerPrintToken(Token token);
+void LexerDumpTokenize(const char* src, Arena* arena);
