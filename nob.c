@@ -35,7 +35,6 @@ bool BuildAll()
     nob_cmd_append(&cmd, "src/main.c");
     nob_cmd_append(&cmd, "src/lexer.c");
     nob_cmd_append(&cmd, "src/parser.c");
-    // nob_cmd_append(&cmd, "src/ast.c");      // Uncomment when ready
     
     return nob_cmd_run(&cmd);
 }
@@ -60,7 +59,6 @@ int main(int argc, char **argv)
     } 
 	else if (strcmp(command, "parser") == 0) 
 	{
-        // Combine lexer + parser src when you add parser.c
         const char *src[] = {"src/lexer.c", "src/parser.c"};
         if (!BuildComponent("parser", "src/parser.c")
 			|| !BuildComponent("lexer", "src/lexer.c")) 
@@ -80,7 +78,6 @@ int main(int argc, char **argv)
         success &= BuildComponent("lexer", "src/lexer.c");
         success &= BuildAll();
         return success ? 0 : 1;
-        
     } 
 	else 
 	{

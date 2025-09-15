@@ -6,6 +6,10 @@
 #include <string.h>
 #include <assert.h>
 
+static AST_Node *ParseExpression(Parser *parser);
+static AST_Node *ParseStatement(Parser *parser);
+static AST_Node *ParseBlock(Parser *parser);
+
 static AST_Node *ASTNodeCreate(Parser *parser, AST_Type type) 
 {
     AST_Node *node = arena_alloc(parser->arena, sizeof(AST_Node));
@@ -22,7 +26,7 @@ static void ASTArrayInit(AST_Array *array, Arena *arena)
 		.data = NULL,
 		.size = 0,
 		.used = 0,
-	}
+	};
 }
 
 static void ASTArrayPush(AST_Array *array, AST_Node *node, Arena *arena) 
@@ -53,7 +57,7 @@ static void ParserError(Parser *parser, const char *message)
     printf("[Line %d, Col %d] Parser Error", parser->prev.line, parser->prev.column);
     if (parser->prev.type == TOKEN_EOF) 
         printf(" at end");
-    else if (parser->prev.type == TOKEN_ERROR);
+    else if (parser->prev.type == TOKEN_ERR);
         // Nothing
     else
         printf(" at '%s'", parser->prev.lexeme);
@@ -68,7 +72,7 @@ static void ParserAdvance(Parser *parser)
 	while (true)
 	{
         parser->curr = LexerNextToken(parser->lexer);
-        if (parser->curr.type != TOKEN_ERROR) 
+        if (parser->curr.type != TOKEN_ERR) 
 			break;
         
         ParserError(parser, parser->curr.lexeme);
@@ -122,7 +126,7 @@ static void ParserSynchronize(Parser *parser)
 static AST_Node *ParseNumber(Parser *parser) 
 {
     AST_Node *node = ASTNodeCreate(parser, AST_NUM);
-    node->num = parser->prev.value.number;
+    node->num = parser->prev.value.num;
     return node;
 }
 
@@ -135,7 +139,7 @@ static AST_Node *ParseIdentifier(Parser *parser)
 
 static AST_Node *ParsePrimary(Parser *parser) 
 {
-    if (ParserMatch(parser, TOKEN_NUMBER)) 
+    if (ParserMatch(parser, TOKEN_NUM)) 
         return ParseNumber(parser);
     
     if (ParserMatch(parser, TOKEN_ID))
@@ -399,7 +403,7 @@ void ASTPrintNode(AST_Node* node, int depth)
         return;
     }
     
-    printf("%*s%s", depth * 2, "", ast_type_names[node->type]);
+    printf("%*s%s", depth * 2, "", ast_names[node->type]);
     
     if (node->name) 
         printf(" '%s'", node->name);
