@@ -189,27 +189,27 @@ static Token LexerScanStr(Lexer* lexer)
             switch (content[read_pos + 1]) 
 			{
                 case 'n': 
-					processed[++write_pos] = '\n';
+					processed[write_pos++] = '\n';
 					++read_pos;
 					break;
                 case 't': 
-					processed[++write_pos] = '\t';
+					processed[write_pos++] = '\t';
 					++read_pos;
 					break;
                 case 'r': 
-					processed[++write_pos] = '\r';
+					processed[write_pos++] = '\r';
 					++read_pos;
 					break;
                 case '\\':
-					processed[++write_pos] = '\\';
+					processed[write_pos++] = '\\';
 					++read_pos;
 					break;
                 case '"': 
-					processed[++write_pos] = '"';
+					processed[write_pos++] = '"';
 					++read_pos;
 					break;
                 default: 
-					processed[++write_pos] = content[read_pos]; 
+					processed[write_pos++] = content[read_pos]; 
 					break;
             }
         } 

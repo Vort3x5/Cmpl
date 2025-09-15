@@ -57,25 +57,9 @@ int main(int argc, char **argv)
         return RunComponent("lexer") ? 0 : 1;
         
     } 
-	else if (strcmp(command, "parser") == 0) 
-	{
-        const char *src[] = {"src/lexer.c", "src/parser.c"};
-        if (!BuildComponent("parser", "src/parser.c")
-			|| !BuildComponent("lexer", "src/lexer.c")) 
-			return 1;
-        return RunComponent("parser") ? 0 : 1;
-    } 
-	else if (strcmp(command, "ast") == 0) 
-	{
-        if (!BuildComponent("ast", "src/ast.c")) 
-			return 1;
-        return RunComponent("ast") ? 0 : 1;
-        
-    } 
 	else if (strcmp(command, "all") == 0) 
 	{
         bool success = true;
-        success &= BuildComponent("lexer", "src/lexer.c");
         success &= BuildAll();
         return success ? 0 : 1;
     } 

@@ -20,7 +20,7 @@ static AST_Node *ASTNodeCreate(Parser *parser, AST_Type type)
     return node;
 }
 
-static void ASTArrayInit(AST_Array *array, Arena *arena) 
+static void ASTArrayInit(AST_Array *array) 
 {
 	*array = (AST_Array){
 		.data = NULL,
@@ -43,7 +43,7 @@ static void ASTArrayPush(AST_Array *array, AST_Node *node, Arena *arena)
         array->size = new_size;
     }
     
-    array->data[++array->used] = node;
+    array->data[array->used++] = node;
 }
 
 static void ParserError(Parser *parser, const char *message) 
@@ -54,7 +54,7 @@ static void ParserError(Parser *parser, const char *message)
     parser->panic_mode = true;
     parser->had_err = true;
     
-    printf("[Line %d, Col %d] Parser Error", parser->prev.line, parser->prev.column);
+    printf("[Line %zu, Col %zu] Parser Error", parser->prev.line, parser->prev.column);
     if (parser->prev.type == TOKEN_EOF) 
         printf(" at end");
     else if (parser->prev.type == TOKEN_ERR);
@@ -139,6 +139,8 @@ static AST_Node *ParseIdentifier(Parser *parser)
 
 static AST_Node *ParsePrimary(Parser *parser) 
 {
+	printf("DEBUG: Current token type = %d, lexeme = '%s'\n", parser->curr.type, parser->curr.lexeme);
+    
     if (ParserMatch(parser, TOKEN_NUM)) 
         return ParseNumber(parser);
     
@@ -258,6 +260,7 @@ static AST_Node *ParseVariableAssignment(Parser *parser)
     
     ParserConsume(parser, TOKEN_ASSIGN, "Expected ':=' in variable assignment");
     AST_Node *value = ParseExpression(parser);
+    ParserConsume(parser, TOKEN_SEMICOLON, "Expected ';' after assignment");
     
     AST_Node *node = ASTNodeCreate(parser, AST_ASSIGNMENT);
     node->name = arena_strdup(parser->arena, name.lexeme);
@@ -302,7 +305,7 @@ static AST_Node *ParseStatement(Parser *parser)
 static AST_Node *ParseBlock(Parser *parser) 
 {
     AST_Node *block = ASTNodeCreate(parser, AST_BLOCK);
-    ASTArrayInit(&block->children, parser->arena);
+    ASTArrayInit(&block->children);
     
     ParserConsume(parser, TOKEN_L_BRACE, "Expected '{'");
     
@@ -377,7 +380,7 @@ Parser *ParserCreate(Lexer *lexer, Arena *arena)
 AST_Node *ParserParseProgram(Parser *parser) 
 {
     AST_Node *program = ASTNodeCreate(parser, AST_PROGRAM);
-    ASTArrayInit(&program->children, parser->arena);
+    ASTArrayInit(&program->children);
     
     while (!ParserCheck(parser, TOKEN_EOF)) 
 	{
