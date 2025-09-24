@@ -121,6 +121,19 @@ static Token LexerScanIds(Lexer *lexer)
 
 	Token_Type type = TOKEN_ID;
 
+	if (strcmp(lexeme, "if") == 0) 
+		type = TOKEN_IF;
+	else if (strcmp(lexeme, "else") == 0) 
+		type = TOKEN_ELSE;
+	else if (strcmp(lexeme, "for") == 0) 
+		type = TOKEN_FOR;
+	else if (strcmp(lexeme, "while") == 0) 
+		type = TOKEN_WHILE;
+	else if (strcmp(lexeme, "return") == 0) 
+		type = TOKEN_RETURN;
+	else if (strcmp(lexeme, "struct") == 0) 
+		type = TOKEN_STRUCT;
+
 	Token token = LexerMakeToken(lexer, type, lexeme, start_line, start_column);
 	return token;
 }
@@ -275,7 +288,7 @@ Token LexerNextToken(Lexer* lexer)
                 return LexerMakeToken(lexer, TOKEN_ASSIGN, ":=", start_line, start_column);
             } 
 			else
-                return LexerMakeToken(lexer, TOKEN_ERR, "Unexpected character", start_line, start_column);
+                return LexerMakeToken(lexer, TOKEN_COLON, ":", start_line, start_column);
             
         case '=':
             if (LexerPeek(lexer) == '=') 
@@ -294,6 +307,15 @@ Token LexerNextToken(Lexer* lexer)
             } 
 			else 
                 return LexerMakeToken(lexer, TOKEN_NOT, "!", start_line, start_column);
+
+		case '-':
+			if (LexerPeek(lexer) == '>') 
+			{
+				LexerNextC(lexer);
+				return LexerMakeToken(lexer, TOKEN_ARROW, "->", start_line, start_column);
+			} 
+			else
+				return LexerMakeToken(lexer, TOKEN_MINUS, "-", start_line, start_column);
             
         case '<':
             if (LexerPeek(lexer) == '=') 
@@ -326,7 +348,7 @@ Token LexerNextToken(Lexer* lexer)
         case ',': return LexerMakeToken(lexer, TOKEN_COMMA, ",", start_line, start_column);
         case '.': return LexerMakeToken(lexer, TOKEN_DOT, ".", start_line, start_column);
         case '+': return LexerMakeToken(lexer, TOKEN_PLUS, "+", start_line, start_column);
-        case '-': return LexerMakeToken(lexer, TOKEN_MINUS, "-", start_line, start_column);
+		// Token - handled in previous switch, since it can both subtract and start an arrow
         case '*': return LexerMakeToken(lexer, TOKEN_MUL, "*", start_line, start_column);
         case '/': return LexerMakeToken(lexer, TOKEN_DIV, "/", start_line, start_column);
         case '%': return LexerMakeToken(lexer, TOKEN_MOD, "%", start_line, start_column);

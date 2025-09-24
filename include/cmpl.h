@@ -31,6 +31,14 @@ typedef enum {
 	TOKEN_R_BRACKET,
 	TOKEN_SEMICOLON,
 	TOKEN_COMMA,
+    TOKEN_COLON,
+    TOKEN_ARROW,
+    TOKEN_IF,
+    TOKEN_ELSE,
+    TOKEN_FOR,
+    TOKEN_WHILE,
+    TOKEN_RETURN,
+    TOKEN_STRUCT,
 	TOKEN_DOT,
 	TOKEN_PLUS,
 	TOKEN_MINUS,
@@ -70,7 +78,13 @@ typedef enum {
 	AST_CALL,
 	AST_BLOCK,
 	AST_NUM,
-	AST_ID
+	AST_ID,
+    AST_RETURN,
+    AST_IF,
+    AST_FOR,
+    AST_WHILE,
+    AST_STRUCT,
+    AST_TYPE,
 } AST_Type;
 
 typedef struct AST_Node AST_Node;
@@ -133,6 +147,14 @@ typedef struct
         [TOKEN_L_BRACKET] = "LBRACKET",
         [TOKEN_R_BRACKET] = "RBRACKET",
         [TOKEN_SEMICOLON] = "SEMICOLON",
+		[TOKEN_COLON] = "COLON",
+		[TOKEN_ARROW] = "ARROW",
+		[TOKEN_IF] = "IF",
+		[TOKEN_ELSE] = "ELSE", 
+		[TOKEN_FOR] = "FOR",
+		[TOKEN_WHILE] = "WHILE",
+		[TOKEN_RETURN] = "RETURN",
+		[TOKEN_STRUCT] = "STRUCT",
         [TOKEN_COMMA] = "COMMA",
         [TOKEN_DOT] = "DOT",
         [TOKEN_PLUS] = "PLUS",
@@ -158,8 +180,21 @@ typedef struct
 		[AST_CALL] = "CALL",
 		[AST_BLOCK] = "BLOCK",
 		[AST_NUM] = "NUMBER",
-		[AST_ID] = "IDENTIFIER"
+		[AST_ID] = "IDENTIFIER",
+		[AST_RETURN] = "RETURN",
+		[AST_IF] = "IF",
+		[AST_FOR] = "FOR",
+		[AST_WHILE] = "WHILE",
+		[AST_STRUCT] = "STRUCT",
+		[AST_TYPE] = "TYPE",
 	};
+
+	static AST_Node *ParseExpression(Parser *parser);
+	static AST_Node *ParseStatement(Parser *parser);
+	static AST_Node *ParseBlock(Parser *parser);
+	static AST_Node *ParseCall(Parser *parser, AST_Node *function);
+	static AST_Node *ParseReturn(Parser *parser);
+	static AST_Node *ParseIf(Parser *parser);
 #endif
 
 Lexer* LexerCreate(const char* src, Arena* arena);

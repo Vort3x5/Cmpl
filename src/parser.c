@@ -6,10 +6,6 @@
 #include <string.h>
 #include <assert.h>
 
-static AST_Node *ParseExpression(Parser *parser);
-static AST_Node *ParseStatement(Parser *parser);
-static AST_Node *ParseBlock(Parser *parser);
-
 static AST_Node *ASTNodeCreate(Parser *parser, AST_Type type) 
 {
     AST_Node *node = arena_alloc(parser->arena, sizeof(AST_Node));
@@ -139,13 +135,16 @@ static AST_Node *ParseIdentifier(Parser *parser)
 
 static AST_Node *ParsePrimary(Parser *parser) 
 {
-	printf("DEBUG: Current token type = %d, lexeme = '%s'\n", parser->curr.type, parser->curr.lexeme);
-    
     if (ParserMatch(parser, TOKEN_NUM)) 
         return ParseNumber(parser);
     
     if (ParserMatch(parser, TOKEN_ID))
-        return ParseIdentifier(parser);
+	{
+		AST_Node *id = ParseIdentifier(parser);
+		if (ParserCheck(parser, TOKEN_L_PAREN))
+			return ParseCall(parser, id);
+		return id;
+	}
     
     if (ParserMatch(parser, TOKEN_L_PAREN)) 
 	{
@@ -278,7 +277,6 @@ static AST_Node *ParseExpressionStatement(Parser *parser)
 
 static AST_Node *ParseStatement(Parser *parser) 
 {
-    // Variable assignment: x := value;
     if (ParserCheck(parser, TOKEN_ID)) 
 	{
         Token name = parser->curr;
@@ -295,9 +293,14 @@ static AST_Node *ParseStatement(Parser *parser)
         }
     }
     
-    // Block statement: { ... }
     if (ParserCheck(parser, TOKEN_L_BRACE)) 
         return ParseBlock(parser);
+
+	if (ParserMatch(parser, TOKEN_RETURN))
+		return ParseReturn(parser);
+
+	if (ParserMatch(parser, TOKEN_IF))
+		return ParseIf(parser);
     
     return ParseExpressionStatement(parser);
 }
@@ -322,6 +325,54 @@ static AST_Node *ParseBlock(Parser *parser)
     return block;
 }
 
+static AST_Node *ParseCall(Parser *parser, AST_Node *function)
+{
+    AST_Node *call = ASTNodeCreate(parser, AST_CALL);
+    call->left = function;
+    ASTArrayInit(&call->children);
+    
+    ParserConsume(parser, TOKEN_L_PAREN, "Expected '(' after function name");
+    
+    if (!ParserCheck(parser, TOKEN_R_PAREN)) 
+	{
+        do 
+		{
+            AST_Node *arg = ParseExpression(parser);
+            ASTArrayPush(&call->children, arg, parser->arena);
+        } while (ParserMatch(parser, TOKEN_COMMA));
+    }
+    
+    ParserConsume(parser, TOKEN_R_PAREN, "Expected ')' after arguments");
+    return call;
+}
+
+static AST_Node *ParseReturn(Parser *parser) 
+{
+    AST_Node *node = ASTNodeCreate(parser, AST_RETURN);
+    
+    if (!ParserCheck(parser, TOKEN_SEMICOLON)) 
+        node->right = ParseExpression(parser);
+    
+    ParserConsume(parser, TOKEN_SEMICOLON, "Expected ';' after return statement");
+    return node;
+}
+
+static AST_Node *ParseIf(Parser *parser) 
+{
+    AST_Node *node = ASTNodeCreate(parser, AST_IF);
+    
+    ParserConsume(parser, TOKEN_L_PAREN, "Expected '(' after 'if'");
+    node->left = ParseExpression(parser);
+    ParserConsume(parser, TOKEN_R_PAREN, "Expected ')' after if condition");
+    
+    node->body = ParseStatement(parser);
+    
+    if (ParserMatch(parser, TOKEN_ELSE)) 
+        node->right = ParseStatement(parser);
+    
+    return node;
+}
+
 static AST_Node *ParseProcedure(Parser *parser) 
 {
     Token name = parser->prev;
@@ -329,16 +380,49 @@ static AST_Node *ParseProcedure(Parser *parser)
     ParserConsume(parser, TOKEN_PROC, "Expected '::'");
     ParserConsume(parser, TOKEN_L_PAREN, "Expected '(' after '::'");
     
-    // TODO: Parse parameters when needed
+    AST_Node *proc = ASTNodeCreate(parser, AST_PROC);
+    proc->name = arena_strdup(parser->arena, name.lexeme);
+    ASTArrayInit(&proc->children);
+    
+    if (!ParserCheck(parser, TOKEN_R_PAREN)) 
+	{
+        do 
+		{
+            if (ParserMatch(parser, TOKEN_ID)) 
+			{
+                Token param_name = parser->prev;
+                
+                AST_Node *param = ASTNodeCreate(parser, AST_VAR);
+                param->name = arena_strdup(parser->arena, param_name.lexeme);
+                
+                if (ParserMatch(parser, TOKEN_COLON)) 
+				{
+                    if (ParserMatch(parser, TOKEN_ID)) 
+					{
+                        AST_Node *type_node = ASTNodeCreate(parser, AST_TYPE);
+                        type_node->name = arena_strdup(parser->arena, parser->prev.lexeme);
+                        param->right = type_node;
+                    }
+                }
+                
+                ASTArrayPush(&proc->children, param, parser->arena);
+            }
+        } while (ParserMatch(parser, TOKEN_COMMA));
+    }
     
     ParserConsume(parser, TOKEN_R_PAREN, "Expected ')' after parameters");
     
-    AST_Node *body = ParseBlock(parser);
+    if (ParserMatch(parser, TOKEN_ARROW)) 
+	{
+        if (ParserMatch(parser, TOKEN_ID)) 
+		{
+            AST_Node *return_type = ASTNodeCreate(parser, AST_TYPE);
+            return_type->name = arena_strdup(parser->arena, parser->prev.lexeme);
+            proc->left = return_type;
+        }
+    }
     
-    AST_Node *proc = ASTNodeCreate(parser, AST_PROC);
-    proc->name = arena_strdup(parser->arena, name.lexeme);
-    proc->body = body;
-    
+    proc->body = ParseBlock(parser);
     return proc;
 }
 
@@ -416,14 +500,12 @@ void ASTPrintNode(AST_Node* node, int depth)
     
     printf("\n");
     
-    // Print children
     if (node->children.used > 0) 
 	{
         for (size_t i = 0; i < node->children.used; ++i) 
             ASTPrintNode(node->children.data[i], depth + 1);
     }
     
-    // Print binary operation operands
     if (node->left) 
 	{
         printf("%*sleft:\n", (depth + 1) * 2, "");
@@ -431,12 +513,12 @@ void ASTPrintNode(AST_Node* node, int depth)
     }
     
     
-	if (node->right) {
+	if (node->right) 
+	{
         printf("%*sright:\n", (depth + 1) * 2, "");
         ASTPrintNode(node->right, depth + 2);
     }
     
-    // Print procedure body
     if (node->body) 
 	{
         printf("%*sbody:\n", (depth + 1) * 2, "");
