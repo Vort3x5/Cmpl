@@ -166,6 +166,7 @@ static AST_Node *ParseUnary(Parser *parser)
         
         AST_Node *node = ASTNodeCreate(parser, AST_BIN_OP);
         node->name = arena_strdup(parser->arena, operator.lexeme);
+        node->left = NULL;
         node->right = right;
         return node;
     }
@@ -271,6 +272,13 @@ static AST_Node *ParseVariableAssignment(Parser *parser)
 static AST_Node *ParseExpressionStatement(Parser *parser) 
 {
     AST_Node *expr = ParseExpression(parser);
+
+	if (expr && expr->type == AST_CALL) 
+	{
+        ParserConsume(parser, TOKEN_SEMICOLON, "Expected ';' after function call");
+        return expr;
+    }
+
     ParserConsume(parser, TOKEN_SEMICOLON, "Expected ';' after expression");
     return expr;
 }
