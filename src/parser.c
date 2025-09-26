@@ -285,13 +285,28 @@ static AST_Node *ParseExpressionStatement(Parser *parser)
 
 static AST_Node *ParseStatement(Parser *parser) 
 {
+	if (ParserMatch(parser, TOKEN_RETURN))
+        return ParseReturn(parser);
+
+    if (ParserMatch(parser, TOKEN_IF))
+        return ParseIf(parser);
+
     if (ParserCheck(parser, TOKEN_ID)) 
-	{
+    {
         Token name = parser->curr;
         ParserAdvance(parser);
         
         if (ParserCheck(parser, TOKEN_ASSIGN)) 
             return ParseVariableAssignment(parser);
+		else if (ParserCheck(parser, TOKEN_L_PAREN)) 
+		{
+            AST_Node *id = ASTNodeCreate(parser, AST_ID);
+            id->name = arena_strdup(parser->arena, name.lexeme);
+            
+            AST_Node *call = ParseCall(parser, id);
+            ParserConsume(parser, TOKEN_SEMICOLON, "Expected ';' after function call");
+            return call;
+        } 
 		else 
 		{
             // Put the identifier back for expression parsing
@@ -304,12 +319,6 @@ static AST_Node *ParseStatement(Parser *parser)
     if (ParserCheck(parser, TOKEN_L_BRACE)) 
         return ParseBlock(parser);
 
-	if (ParserMatch(parser, TOKEN_RETURN))
-		return ParseReturn(parser);
-
-	if (ParserMatch(parser, TOKEN_IF))
-		return ParseIf(parser);
-    
     return ParseExpressionStatement(parser);
 }
 
@@ -505,6 +514,9 @@ void ASTPrintNode(AST_Node* node, int depth)
     
     if (node->type == AST_NUM) 
         printf(" (%lld)", node->num);
+
+	if (node->type == AST_BIN_OP && !node->left)
+        printf(" (UNARY)");
     
     printf("\n");
     
@@ -513,7 +525,30 @@ void ASTPrintNode(AST_Node* node, int depth)
         for (size_t i = 0; i < node->children.used; ++i) 
             ASTPrintNode(node->children.data[i], depth + 1);
     }
-    
+
+    if (node->type == AST_IF) 
+	{
+		if (node->left) 
+		{
+			printf("%*scondition:\n", (depth + 1) * 2, "");
+			ASTPrintNode(node->left, depth + 2);
+		}
+		
+		if (node->body) 
+		{
+			printf("%*sthen:\n", (depth + 1) * 2, "");
+			ASTPrintNode(node->body, depth + 2);
+		}
+		
+		if (node->right) 
+		{
+			printf("%*selse:\n", (depth + 1) * 2, "");
+			ASTPrintNode(node->right, depth + 2);
+		}
+		
+		return;
+	}
+
     if (node->left) 
 	{
         printf("%*sleft:\n", (depth + 1) * 2, "");
