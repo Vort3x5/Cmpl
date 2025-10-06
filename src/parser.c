@@ -329,48 +329,48 @@ static AST_Node *ParseStatement(Parser *parser)
 
 	if (ParserCheck(parser, TOKEN_ID)) 
 	{
-		Token name = parser->curr;
+		size_t saved_curr = parser->lexer->curr;
+		u32 saved_line = parser->lexer->line;
+		u32 saved_column = parser->lexer->column;
+		Token saved_curr_token = parser->curr;
+		Token saved_prev_token = parser->prev;
+		
 		ParserAdvance(parser);
 		
 		if (ParserCheck(parser, TOKEN_ASSIGN)) 
-		{
-			// Declaration with :=
 			return ParseVariableAssignment(parser);
-		} 
-		else if (ParserCheck(parser, TOKEN_L_PAREN)) 
+		
+		// Restore complete state
+		parser->lexer->curr = saved_curr;
+		parser->lexer->line = saved_line;
+		parser->lexer->column = saved_column;
+		parser->curr = saved_curr_token;
+		parser->prev = saved_prev_token;
+		
+		// Re-parse from the identifier as a full expression/assignment
+		AST_Node *lhs = ParseExpression(parser);
+		
+		// Check for regular assignment: lhs = rhs
+		if (ParserCheck(parser, TOKEN_EQ_ASSIGN)) 
 		{
-			// Function call
-			parser->curr = parser->prev;
-			parser->prev = name;
-			return ParseExpressionStatement(parser);
-		} 
-		else 
-		{
-			// Could be regular assignment or expression
-			// Parse the full left-hand side (could be x.y or arr[i].field)
-			parser->curr = parser->prev;
-			parser->prev = name;
+			ParserAdvance(parser);
+			AST_Node *rhs = ParseExpression(parser);
+			ParserConsume(parser, TOKEN_SEMICOLON, "Expected ';' after assignment");
 			
-			AST_Node *lhs = ParseExpression(parser);
-			
-			// Check if it's assignment: lhs = rhs
-			if (ParserCheck(parser, TOKEN_EQ)) 
-			{
-				ParserAdvance(parser);
-				AST_Node *rhs = ParseExpression(parser);
-				ParserConsume(parser, TOKEN_SEMICOLON, "Expected ';' after assignment");
-				
-				AST_Node *assignment = ASTNodeCreate(parser, AST_ASSIGNMENT);
-				assignment->left = lhs;
-				assignment->right = rhs;
-				return assignment;
-			} 
-			else 
-			{
-				ParserConsume(parser, TOKEN_SEMICOLON, "Expected ';' after expression");
-				return lhs;
-			}
+			AST_Node *assignment = ASTNodeCreate(parser, AST_ASSIGNMENT);
+			assignment->left = lhs;
+			assignment->right = rhs;
+			return assignment;
 		}
+		
+		if (lhs && lhs->type == AST_CALL) 
+		{
+			ParserConsume(parser, TOKEN_SEMICOLON, "Expected ';' after function call");
+			return lhs;
+		}
+		
+		ParserConsume(parser, TOKEN_SEMICOLON, "Expected ';' after expression");
+		return lhs;
 	}
     
     if (ParserCheck(parser, TOKEN_L_BRACE)) 
