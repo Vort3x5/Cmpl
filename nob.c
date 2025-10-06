@@ -54,14 +54,14 @@ int main(int argc, char **argv)
     if (strcmp(command, "lexer") == 0) {
         if (!BuildComponent("lexer", "src/lexer.c")) 
 			return 1;
-        return RunComponent("lexer") ? 0 : 1;
+        return !(RunComponent("lexer"));
         
     } 
 	else if (strcmp(command, "all") == 0) 
 	{
         bool success = true;
         success &= BuildAll();
-        return success ? 0 : 1;
+        return !(success);
     } 
 	else 
 	{

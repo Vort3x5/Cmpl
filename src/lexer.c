@@ -289,6 +289,15 @@ Token LexerNextToken(Lexer* lexer)
             } 
 			else
                 return LexerMakeToken(lexer, TOKEN_COLON, ":", start_line, start_column);
+
+		case '.':
+			if (LexerPeek(lexer) == '.') 
+			{
+				LexerNextC(lexer);
+				return LexerMakeToken(lexer, TOKEN_RANGE, "..", start_line, start_column);
+			} 
+			else 
+				return LexerMakeToken(lexer, TOKEN_DOT, ".", start_line, start_column);
             
         case '=':
             if (LexerPeek(lexer) == '=') 
@@ -346,9 +355,7 @@ Token LexerNextToken(Lexer* lexer)
         case ']': return LexerMakeToken(lexer, TOKEN_R_BRACKET, "]", start_line, start_column);
         case ';': return LexerMakeToken(lexer, TOKEN_SEMICOLON, ";", start_line, start_column);
         case ',': return LexerMakeToken(lexer, TOKEN_COMMA, ",", start_line, start_column);
-        case '.': return LexerMakeToken(lexer, TOKEN_DOT, ".", start_line, start_column);
         case '+': return LexerMakeToken(lexer, TOKEN_PLUS, "+", start_line, start_column);
-		// Token - handled in previous switch, since it can both subtract and start an arrow
         case '*': return LexerMakeToken(lexer, TOKEN_MUL, "*", start_line, start_column);
         case '/': return LexerMakeToken(lexer, TOKEN_DIV, "/", start_line, start_column);
         case '%': return LexerMakeToken(lexer, TOKEN_MOD, "%", start_line, start_column);

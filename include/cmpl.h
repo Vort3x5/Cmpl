@@ -33,6 +33,7 @@ typedef enum {
 	TOKEN_COMMA,
     TOKEN_COLON,
     TOKEN_ARROW,
+    TOKEN_RANGE,
     TOKEN_IF,
     TOKEN_ELSE,
     TOKEN_FOR,
@@ -82,8 +83,10 @@ typedef enum {
     AST_RETURN,
     AST_IF,
     AST_FOR,
+    AST_FOR_RANGE,
     AST_WHILE,
     AST_STRUCT,
+    AST_FIELD,
     AST_TYPE,
 } AST_Type;
 
@@ -105,7 +108,7 @@ struct AST_Node
 	s64 num;
 	char *str;
 
-	u32 line, column;
+	u32 line, column, flags;
 };
 
 typedef struct {
@@ -184,8 +187,10 @@ typedef struct
 		[AST_RETURN] = "RETURN",
 		[AST_IF] = "IF",
 		[AST_FOR] = "FOR",
+		[AST_FOR_RANGE] = "FOR_RANGE"
 		[AST_WHILE] = "WHILE",
 		[AST_STRUCT] = "STRUCT",
+		[AST_FIELD] = "FIELD",
 		[AST_TYPE] = "TYPE",
 	};
 
@@ -195,6 +200,9 @@ typedef struct
 	static AST_Node *ParseCall(Parser *parser, AST_Node *function);
 	static AST_Node *ParseReturn(Parser *parser);
 	static AST_Node *ParseIf(Parser *parser);
+	static AST_Node *ParseFor(Parser *parser);
+	static AST_Node *ParseWhile(Parser *parser);
+	static AST_Node *ParseStruct(Parser *parser);
 #endif
 
 Lexer* LexerCreate(const char* src, Arena* arena);

@@ -291,6 +291,12 @@ static AST_Node *ParseStatement(Parser *parser)
     if (ParserMatch(parser, TOKEN_IF))
         return ParseIf(parser);
 
+    if (ParserMatch(parser, TOKEN_FOR))
+        return ParseFor(parser);
+        
+    if (ParserMatch(parser, TOKEN_WHILE))
+        return ParseWhile(parser);
+
     if (ParserCheck(parser, TOKEN_ID)) 
     {
         Token name = parser->curr;
@@ -378,14 +384,16 @@ static AST_Node *ParseIf(Parser *parser)
 {
     AST_Node *node = ASTNodeCreate(parser, AST_IF);
     
-    ParserConsume(parser, TOKEN_L_PAREN, "Expected '(' after 'if'");
-    node->left = ParseExpression(parser);
-    ParserConsume(parser, TOKEN_R_PAREN, "Expected ')' after if condition");
+    // Parentheses are optional in Jai
+    bool has_parens = ParserMatch(parser, TOKEN_L_PAREN);
+    node->left = ParseExpression(parser); // condition
+    if (has_parens) 
+        ParserConsume(parser, TOKEN_R_PAREN, "Expected ')' after if condition");
     
-    node->body = ParseStatement(parser);
+    node->body = ParseStatement(parser); // then branch
     
     if (ParserMatch(parser, TOKEN_ELSE)) 
-        node->right = ParseStatement(parser);
+        node->right = ParseStatement(parser); // else branch
     
     return node;
 }
@@ -446,9 +454,26 @@ static AST_Node *ParseProcedure(Parser *parser)
 static AST_Node *ParseDeclaration(Parser *parser) 
 {
     if (ParserMatch(parser, TOKEN_ID)) 
-	{
+    {
+        Token name = parser->prev;
+        
         if (ParserCheck(parser, TOKEN_PROC)) 
-            return ParseProcedure(parser);
+		{
+            ParserAdvance(parser); // consume ::
+            
+            if (ParserMatch(parser, TOKEN_STRUCT)) 
+			{
+                AST_Node *struct_def = ParseStruct(parser);
+                struct_def->name = arena_strdup(parser->arena, name.lexeme);
+                return struct_def;
+            } 
+			else 
+			{
+                // Put back the :: and parse as procedure
+                parser->curr.type = TOKEN_PROC;
+                return ParseProcedure(parser);
+            }
+        } 
 		else 
 		{
             // Put identifier back and parse as statement
@@ -459,6 +484,110 @@ static AST_Node *ParseDeclaration(Parser *parser)
     }
     
     return ParseStatement(parser);
+}
+
+static AST_Node *ParseFor(Parser *parser) 
+{
+    AST_Node *node = ASTNodeCreate(parser, AST_FOR_RANGE);
+    
+    bool reverse = ParserMatch(parser, TOKEN_LESS);
+    
+    Token iterator_name = {0};
+    bool has_iterator_name = false;
+    
+    if (ParserCheck(parser, TOKEN_ID)) 
+	{
+        Token peek_ahead = parser->curr;
+        ParserAdvance(parser);
+        
+        if (ParserCheck(parser, TOKEN_COLON)) 
+		{
+            // We have: identifier :
+            iterator_name = peek_ahead;
+            has_iterator_name = true;
+            ParserAdvance(parser); // consume :
+        } 
+		else {
+            // Put the identifier back, it's the start of range expression
+            parser->curr = parser->prev;
+            parser->prev = peek_ahead;
+        }
+    }
+    
+    // Parse range: start..end
+    AST_Node *start = ParseExpression(parser);
+    
+    if (!ParserMatch(parser, TOKEN_RANGE)) 
+	{
+        ParserError(parser, "Expected '..' in for loop range");
+        return node;
+    }
+    
+    AST_Node *end = ParseExpression(parser);
+    
+    // Store range information in node
+    node->left = start;     // range start
+    node->right = end;      // range end
+    
+    if (has_iterator_name) 
+        node->name = arena_strdup(parser->arena, iterator_name.lexeme);
+	else 
+        node->name = arena_strdup(parser->arena, "it"); // default iterator name
+    
+    // Store reverse flag (you'll need to add a flag field to AST_Node or encode it)
+    // For now, we can store it in a new field or ignore it
+    
+    // Parse body
+    node->body = ParseStatement(parser);
+    
+    return node;
+}
+
+static AST_Node *ParseWhile(Parser *parser) 
+{
+    AST_Node *node = ASTNodeCreate(parser, AST_WHILE);
+    
+	bool has_parens = ParserMatch(parser, TOKEN_L_PAREN);
+    node->left = ParseExpression(parser); // condition
+	if (has_parens)
+		ParserConsume(parser, TOKEN_R_PAREN, 
+				"Expected ')' if ')' was provided at the beginning of while condition");
+    
+    node->body = ParseStatement(parser);
+    
+    return node;
+}
+
+static AST_Node *ParseStruct(Parser *parser) 
+{
+    AST_Node *node = ASTNodeCreate(parser, AST_STRUCT);
+    ASTArrayInit(&node->children); // For fields
+    
+    ParserConsume(parser, TOKEN_L_BRACE, "Expected '{' after 'struct'");
+    
+    // Parse fields: name: type;
+    while (!ParserCheck(parser, TOKEN_R_BRACE) && !ParserCheck(parser, TOKEN_EOF)) 
+    {
+        if (ParserMatch(parser, TOKEN_ID)) 
+        {
+            Token field_name = parser->prev;
+            AST_Node *field = ASTNodeCreate(parser, AST_FIELD);
+            field->name = arena_strdup(parser->arena, field_name.lexeme);
+            
+            if (ParserMatch(parser, TOKEN_COLON) && ParserMatch(parser, TOKEN_ID)) 
+			{
+				AST_Node *type_node = ASTNodeCreate(parser, AST_TYPE);
+				type_node->name = arena_strdup(parser->arena, parser->prev.lexeme);
+				field->right = type_node;
+			}
+            
+            ParserConsume(parser, TOKEN_SEMICOLON, "Expected ';' after field");
+            ASTArrayPush(&node->children, field, parser->arena);
+        }
+    }
+    
+    ParserConsume(parser, TOKEN_R_BRACE, "Expected '}' after struct fields");
+    return node;
 }
 
 Parser *ParserCreate(Lexer *lexer, Arena *arena) 
