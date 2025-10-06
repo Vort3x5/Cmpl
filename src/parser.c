@@ -1,3 +1,4 @@
+#include <stdio.h>
 #define PARSER_DEF
 #include <cmpl.h>
 
@@ -459,20 +460,32 @@ static AST_Node *ParseDeclaration(Parser *parser)
         
         if (ParserCheck(parser, TOKEN_PROC)) 
 		{
+            // Look ahead to see if it's a struct definition
+            size_t saved_curr = parser->lexer->curr;
+            u32 saved_line = parser->lexer->line;
+            u32 saved_column = parser->lexer->column;
+            Token saved_curr_token = parser->curr;
+            Token saved_prev_token = parser->prev;
+            
             ParserAdvance(parser); // consume ::
             
             if (ParserMatch(parser, TOKEN_STRUCT)) 
 			{
+                // It's a struct: Name :: struct { }
                 AST_Node *struct_def = ParseStruct(parser);
                 struct_def->name = arena_strdup(parser->arena, name.lexeme);
                 return struct_def;
-            } 
-			else 
-			{
-                // Put back the :: and parse as procedure
-                parser->curr.type = TOKEN_PROC;
-                return ParseProcedure(parser);
             }
+            
+            // Not a struct, restore state and parse as procedure
+            parser->lexer->curr = saved_curr;
+            parser->lexer->line = saved_line;
+            parser->lexer->column = saved_column;
+            parser->curr = saved_curr_token;
+            parser->prev = saved_prev_token;
+            
+            // Now parse as normal procedure
+            return ParseProcedure(parser);
         } 
 		else 
 		{
@@ -539,6 +552,9 @@ static AST_Node *ParseFor(Parser *parser)
     
     // Parse body
     node->body = ParseStatement(parser);
+
+	if (reverse)
+		node->flags |= AST_FLAG_REVERSE;
     
     return node;
 }
@@ -673,6 +689,36 @@ void ASTPrintNode(AST_Node* node, int depth)
 		{
 			printf("%*selse:\n", (depth + 1) * 2, "");
 			ASTPrintNode(node->right, depth + 2);
+		}
+		
+		return;
+	}
+
+	if (node->type == AST_FOR_RANGE)
+	{
+		if (node->name)
+			printf(" iterator='%s'", node->name);
+
+		if (node->flags & AST_FLAG_REVERSE)
+			printf(" (REVERSE)");
+		printf("\n");
+		
+		if (node->left) 
+		{
+			printf("%*sstart:\n", (depth + 1) * 2, "");
+			ASTPrintNode(node->left, depth + 2);
+		}
+		
+		if (node->right) 
+		{
+			printf("%*send:\n", (depth + 1) * 2, "");
+			ASTPrintNode(node->right, depth + 2);
+		}
+		
+		if (node->body) 
+		{
+			printf("%*sbody:\n", (depth + 1) * 2, "");
+			ASTPrintNode(node->body, depth + 2);
 		}
 		
 		return;

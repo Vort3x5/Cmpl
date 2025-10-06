@@ -4,6 +4,8 @@
 
 #include <stdbool.h>
 
+#define AST_FLAG_REVERSE 0x1
+
 typedef char s8;
 typedef unsigned char u8;
 typedef short s16;
@@ -187,7 +189,7 @@ typedef struct
 		[AST_RETURN] = "RETURN",
 		[AST_IF] = "IF",
 		[AST_FOR] = "FOR",
-		[AST_FOR_RANGE] = "FOR_RANGE"
+		[AST_FOR_RANGE] = "FOR_RANGE",
 		[AST_WHILE] = "WHILE",
 		[AST_STRUCT] = "STRUCT",
 		[AST_FIELD] = "FIELD",
