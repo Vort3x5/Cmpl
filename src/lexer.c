@@ -306,7 +306,7 @@ Token LexerNextToken(Lexer* lexer)
                 return LexerMakeToken(lexer, TOKEN_EQ, "==", start_line, start_column);
             } 
 			else 
-                return LexerMakeToken(lexer, TOKEN_ERR, "Single '=' not supported, use ':=' for assignment", start_line, start_column);
+                return LexerMakeToken(lexer, TOKEN_EQ_ASSIGN, "=", start_line, start_column);
             
         case '!':
             if (LexerPeek(lexer) == '=') 

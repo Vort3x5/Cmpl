@@ -25,6 +25,7 @@ typedef enum {
 	TOKEN_STR,
 	TOKEN_PROC,
 	TOKEN_ASSIGN,
+	TOKEN_EQ_ASSIGN,
 	TOKEN_L_PAREN,
 	TOKEN_R_PAREN,
 	TOKEN_L_BRACE,
@@ -82,6 +83,7 @@ typedef enum {
 	AST_BLOCK,
 	AST_NUM,
 	AST_ID,
+	AST_INDEX,
     AST_RETURN,
     AST_IF,
     AST_FOR,
@@ -89,6 +91,7 @@ typedef enum {
     AST_WHILE,
     AST_STRUCT,
     AST_FIELD,
+	AST_FIELD_ACCESS,
     AST_TYPE,
 } AST_Type;
 
@@ -139,6 +142,7 @@ typedef struct
         [TOKEN_PROC] = "PROCEDURE",
         [TOKEN_ASSIGN] = "ASSIGN",
         [TOKEN_EQ] = "EQUAL",
+        [TOKEN_EQ_ASSIGN] = "EQUAL_ASSIGN",
         [TOKEN_NOT_EQ] = "NOT_EQUAL",
         [TOKEN_NOT] = "NOT",
         [TOKEN_LESS] = "LESS",
@@ -186,6 +190,7 @@ typedef struct
 		[AST_BLOCK] = "BLOCK",
 		[AST_NUM] = "NUMBER",
 		[AST_ID] = "IDENTIFIER",
+		[AST_INDEX] = "INDEX",
 		[AST_RETURN] = "RETURN",
 		[AST_IF] = "IF",
 		[AST_FOR] = "FOR",
@@ -193,6 +198,7 @@ typedef struct
 		[AST_WHILE] = "WHILE",
 		[AST_STRUCT] = "STRUCT",
 		[AST_FIELD] = "FIELD",
+		[AST_FIELD_ACCESS] = "FIELD_ACCESS",
 		[AST_TYPE] = "TYPE",
 	};
 

@@ -139,12 +139,41 @@ static AST_Node *ParsePrimary(Parser *parser)
     if (ParserMatch(parser, TOKEN_NUM)) 
         return ParseNumber(parser);
     
-    if (ParserMatch(parser, TOKEN_ID))
+	if (ParserMatch(parser, TOKEN_ID))
 	{
-		AST_Node *id = ParseIdentifier(parser);
-		if (ParserCheck(parser, TOKEN_L_PAREN))
-			return ParseCall(parser, id);
-		return id;
+		AST_Node *expr = ParseIdentifier(parser);
+		
+		// Handle postfix operations: array[index], struct.field, func()
+		while (true) 
+		{
+			if (ParserCheck(parser, TOKEN_L_BRACKET)) 
+			{
+				ParserAdvance(parser);
+				AST_Node *index_node = ASTNodeCreate(parser, AST_INDEX);
+				index_node->left = expr;
+				index_node->right = ParseExpression(parser);
+				ParserConsume(parser, TOKEN_R_BRACKET, "Expected ']' after array index");
+				expr = index_node;
+			} 
+			else if (ParserMatch(parser, TOKEN_DOT)) 
+			{
+				if (!ParserMatch(parser, TOKEN_ID)) 
+				{
+					ParserError(parser, "Expected field name after '.'");
+					break;
+				}
+				AST_Node *member_node = ASTNodeCreate(parser, AST_FIELD_ACCESS);
+				member_node->left = expr;
+				member_node->name = arena_strdup(parser->arena, parser->prev.lexeme);
+				expr = member_node;
+			} 
+			else if (ParserCheck(parser, TOKEN_L_PAREN)) 
+				expr = ParseCall(parser, expr);
+			else 
+				break;
+		}
+		
+		return expr;
 	}
     
     if (ParserMatch(parser, TOKEN_L_PAREN)) 
@@ -298,30 +327,51 @@ static AST_Node *ParseStatement(Parser *parser)
     if (ParserMatch(parser, TOKEN_WHILE))
         return ParseWhile(parser);
 
-    if (ParserCheck(parser, TOKEN_ID)) 
-    {
-        Token name = parser->curr;
-        ParserAdvance(parser);
-        
-        if (ParserCheck(parser, TOKEN_ASSIGN)) 
-            return ParseVariableAssignment(parser);
+	if (ParserCheck(parser, TOKEN_ID)) 
+	{
+		Token name = parser->curr;
+		ParserAdvance(parser);
+		
+		if (ParserCheck(parser, TOKEN_ASSIGN)) 
+		{
+			// Declaration with :=
+			return ParseVariableAssignment(parser);
+		} 
 		else if (ParserCheck(parser, TOKEN_L_PAREN)) 
 		{
-            AST_Node *id = ASTNodeCreate(parser, AST_ID);
-            id->name = arena_strdup(parser->arena, name.lexeme);
-            
-            AST_Node *call = ParseCall(parser, id);
-            ParserConsume(parser, TOKEN_SEMICOLON, "Expected ';' after function call");
-            return call;
-        } 
+			// Function call
+			parser->curr = parser->prev;
+			parser->prev = name;
+			return ParseExpressionStatement(parser);
+		} 
 		else 
 		{
-            // Put the identifier back for expression parsing
-            parser->curr = parser->prev;
-            parser->prev = name;
-            return ParseExpressionStatement(parser);
-        }
-    }
+			// Could be regular assignment or expression
+			// Parse the full left-hand side (could be x.y or arr[i].field)
+			parser->curr = parser->prev;
+			parser->prev = name;
+			
+			AST_Node *lhs = ParseExpression(parser);
+			
+			// Check if it's assignment: lhs = rhs
+			if (ParserCheck(parser, TOKEN_EQ)) 
+			{
+				ParserAdvance(parser);
+				AST_Node *rhs = ParseExpression(parser);
+				ParserConsume(parser, TOKEN_SEMICOLON, "Expected ';' after assignment");
+				
+				AST_Node *assignment = ASTNodeCreate(parser, AST_ASSIGNMENT);
+				assignment->left = lhs;
+				assignment->right = rhs;
+				return assignment;
+			} 
+			else 
+			{
+				ParserConsume(parser, TOKEN_SEMICOLON, "Expected ';' after expression");
+				return lhs;
+			}
+		}
+	}
     
     if (ParserCheck(parser, TOKEN_L_BRACE)) 
         return ParseBlock(parser);
