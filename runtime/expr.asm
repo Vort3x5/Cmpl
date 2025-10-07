@@ -1,5 +1,8 @@
 ; asmsyntax=fasm
 
+if_counter = 0
+while_counter = 0
+
 macro _Num value 
 {
     mov rax, value
@@ -12,6 +15,7 @@ macro _Var name
 
 macro _Add left, right 
 {
+	common
     left
     push rax
     right
@@ -22,6 +26,7 @@ macro _Add left, right
 
 macro _Sub left, right 
 {
+	common
     left
     push rax
     right
@@ -32,6 +37,7 @@ macro _Sub left, right
 
 macro _Mul left, right 
 {
+	common
     left
     push rax
     right
@@ -42,8 +48,57 @@ macro _Mul left, right
 
 macro _Assign var_name, [expr] 
 {
-	forward
+	common
     expr
-	forward
     _StoreVar var_name, rax
+}
+
+macro _If condition, [then_block] 
+{
+    common
+    if_counter = if_counter + 1
+    
+    condition
+    test rax, rax
+    jz .if_false#if_counter
+    
+    forward
+        then_block
+    
+    common
+    jmp .if_end#if_counter
+    
+    .if_false#if_counter:
+    .if_end#if_counter:
+}
+
+macro _While condition, [body] 
+{
+    common
+    while_counter = while_counter + 1
+    
+    .while_start#while_counter:
+    
+    condition
+    test rax, rax
+    jz .while_end#while_counter
+    
+    forward
+        body
+    
+    common
+    jmp .while_start#while_counter
+    
+    .while_end#while_counter:
+}
+
+macro _Return [expr] 
+{
+    common
+    forward
+    expr
+    common
+    mov rsp, rbp
+    pop rbp
+    ret
 }

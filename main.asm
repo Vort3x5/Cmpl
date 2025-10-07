@@ -3,13 +3,15 @@
 include 'runtime/core.asm'
 
 _FuncBeginWithLocals main, 24
-    _DeclareVar x, 8
-    _DeclareVar y, 8
-    _DeclareVar result, 8
+    _DeclareVar i, 8
+    _DeclareVar sum, 8
     
-    _Assign x, _Num 10
-    _Assign y, _Num 20
-    _Assign result, _Add _Var x, _Var y
+    _Assign i, _Num 0
+    _Assign sum, _Num 0
     
-    _LoadVar rax, result
+    _While _Sub _Num 12, _Var i, <\
+        _Assign sum, _Add _Var sum, _Num 1,\
+        _Assign i, _Add _Var i, _Num 1>
+    
+    _LoadVar rax, sum
 _FuncEnd
