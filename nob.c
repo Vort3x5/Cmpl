@@ -1,27 +1,6 @@
 #define NOB_IMPLEMENTATION
 #include "include/nob.h"
 
-bool BuildComponent(const char *name, const char *src) 
-{
-    nob_mkdir_if_not_exists("out");
-    
-    Nob_Cmd cmd = {0};
-    nob_cc(&cmd);
-    nob_cc_flags(&cmd);
-    nob_cmd_append(&cmd, "-I", "include");
-    nob_cc_output(&cmd, nob_temp_sprintf("out/%s", name));
-	nob_cmd_append(&cmd, "src/main.c");
-	nob_cmd_append(&cmd, src);
-    return nob_cmd_run(&cmd);
-}
-
-bool RunComponent(const char *name) 
-{
-    Nob_Cmd cmd = {0};
-    nob_cmd_append(&cmd, nob_temp_sprintf("./out/%s", name));
-    return nob_cmd_run(&cmd);
-}
-
 bool BuildAll() 
 {
     nob_mkdir_if_not_exists("out");
@@ -35,6 +14,7 @@ bool BuildAll()
     nob_cmd_append(&cmd, "src/main.c");
     nob_cmd_append(&cmd, "src/lexer.c");
     nob_cmd_append(&cmd, "src/parser.c");
+    nob_cmd_append(&cmd, "src/generator.c");
     
     return nob_cmd_run(&cmd);
 }
@@ -51,13 +31,7 @@ int main(int argc, char **argv)
     
     const char *command = argv[1];
     
-    if (strcmp(command, "lexer") == 0) {
-        if (!BuildComponent("lexer", "src/lexer.c")) 
-			return 1;
-        return !(RunComponent("lexer"));
-        
-    } 
-	else if (strcmp(command, "all") == 0) 
+	if (strcmp(command, "all") == 0) 
 	{
         bool success = true;
         success &= BuildAll();

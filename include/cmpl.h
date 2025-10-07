@@ -1,6 +1,7 @@
 #pragma once
 
 #include <arena.h>
+#include <nob.h>
 
 #include <stdbool.h>
 
@@ -133,6 +134,13 @@ typedef struct
     bool panic_mode;
 } Parser;
 
+typedef struct
+{
+	Nob_String_Builder sb;
+	Arena *arena;
+	int local_offset, temp_count;
+} Generator;
+
 #ifdef LEXER_DEF
     const char* token_names[] = {
         [TOKEN_EOF] = "EOF",
@@ -213,6 +221,11 @@ typedef struct
 	static AST_Node *ParseStruct(Parser *parser);
 #endif
 
+#ifdef GEN_DEF
+    static void GenExpr(Generator *g, AST_Node *node);
+    static void GenStmt(Generator *g, AST_Node *node);
+#endif
+
 Lexer* LexerCreate(const char* src, Arena* arena);
 Token LexerNextToken(Lexer* lexer);
 Token LexerPeekToken(Lexer* lexer);
@@ -225,3 +238,5 @@ bool ParserHadError(Parser* parser);
 
 void ASTPrintNode(AST_Node* node, int depth);
 void ASTPrintProgram(AST_Node* program);
+
+bool Generate(AST_Node *ast, const char *output_path, Arena *arena);

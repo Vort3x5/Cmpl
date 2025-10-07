@@ -1,59 +1,89 @@
 #define ARENA_IMPLEMENTATION
+#define NOB_IMPLEMENTATION
 #include <cmpl.h>
 
-void TestParseExpression(const char* source, Arena* arena) 
+void CompileJaiFile(const char *src, const char *out, Arena *arena) 
 {
-    printf("=== Testing Expression: %s ===\n", source);
+    printf("=== Compiling %s ===\n", src);
     
-    Lexer* lexer = LexerCreate(source, arena);
-    Parser* parser = ParserCreate(lexer, arena);
+    FILE *f = fopen(src, "r");
+    if (!f) 
+	{
+        fprintf(stderr, "Error: Could not open file %s\n", src);
+        return;
+    }
     
-    AST_Node* ast = ParserParseProgram(parser);
+    fseek(f, 0, SEEK_END);
+    long size = ftell(f);
+    fseek(f, 0, SEEK_SET);
+    
+    char *source = (char*)arena_alloc(arena, size + 1);
+    fread(source, 1, size, f);
+    source[size] = '\0';
+    fclose(f);
+    
+    Lexer *lexer = LexerCreate(source, arena);
+    Parser *parser = ParserCreate(lexer, arena);
+    AST_Node *ast = ParserParseProgram(parser);
     
     if (ParserHadError(parser)) 
+	{
         printf("Parser encountered errors!\n");
-	else if (ast) 
-        ASTPrintProgram(ast);
+        return;
+    }
     
-    printf("\n");
+    if (!ast) 
+	{
+        printf("Failed to parse program!\n");
+        return;
+    }
+    
+    // Print AST for debugging
+    printf("\n=== AST ===\n");
+    ASTPrintProgram(ast);
+    
+    // Generate assembly
+    printf("\n=== Code Generation ===\n");
+    char asm_file[4096];
+    snprintf(asm_file, sizeof(asm_file), "%s.asm", out);
+    
+    if (!Generate(ast, asm_file, arena)) 
+	{
+        fprintf(stderr, "Code generation failed!\n");
+        return;
+    }
+    
+    printf("\n=== Success! ===\n");
+    printf("Generated: %s\n", asm_file);
+    printf("Executable: %s\n", out);
 }
 
-int main() 
+int main(int argc, char **argv) 
 {
-	Arena arena = {0};
-
-	// Test 6: Simple struct
-	TestParseExpression(
-		"Vector2 :: struct { x: float; y: float; }",
-		&arena
-	);
-
-	// Test 7: Struct with multiple field types
-	TestParseExpression(
-		"Player :: struct { name: string; health: int; alive: bool; }",
-		&arena
-	);
-
-	// Test 8: Nested struct
-	TestParseExpression(
-		"Entity :: struct { position: Vector2; velocity: Vector2; }",
-		&arena
-	);
-
-	// Test 9: Struct with procedure
-	TestParseExpression(
-		"Vector2 :: struct { x: float; y: float; } "
-		"add :: (a: Vector2, b: Vector2) -> Vector2 { return a; }",
-		&arena
-	);
-
-	// Test 10: For loop in procedure with struct
-	TestParseExpression(
-		"update :: () { for 0..100 { entities[it].x = it; } }",
-		&arena
-	);
-
-	arena_reset(&arena);
-	arena_free(&arena);
+    Arena arena = {0};
+    
+    if (argc < 2) 
+	{
+        printf("=== Running Built-in Tests ===\n\n");
+        
+        const char *test1 = "main :: () { x := 42; }";
+        Lexer *lexer = LexerCreate(test1, &arena);
+        Parser *parser = ParserCreate(lexer, &arena);
+        AST_Node *ast = ParserParseProgram(parser);
+        if (ast) 
+			ASTPrintProgram(ast);
+        arena_reset(&arena);
+        
+        printf("\n");
+    } 
+	else 
+	{
+        const char *input_file = argv[1];
+        const char *out = argc > 2 ? argv[2] : "out/out";
+        
+        CompileJaiFile(input_file, out, &arena);
+    }
+    
+    arena_free(&arena);
     return 0;
 }
