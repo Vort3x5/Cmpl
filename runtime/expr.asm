@@ -46,9 +46,8 @@ macro _Mul left, right
     imul rax, rbx
 }
 
-macro _Assign var_name, [expr] 
+macro _Assign var_name, expr 
 {
-	common
     expr
     _StoreVar var_name, rax
 }
@@ -72,23 +71,18 @@ macro _If condition, [then_block]
     .if_end#if_counter:
 }
 
-macro _While condition, [body] 
+macro _BeginWhile condition 
 {
-    common
     while_counter = while_counter + 1
-    
     .while_start#while_counter:
-    
     condition
     test rax, rax
     jz .while_end#while_counter
-    
-    forward
-        body
-    
-    common
+}
+
+macro _EndWhile 
+{
     jmp .while_start#while_counter
-    
     .while_end#while_counter:
 }
 
