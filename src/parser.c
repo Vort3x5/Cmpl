@@ -330,8 +330,8 @@ static AST_Node *ParseStatement(Parser *parser)
 	if (ParserCheck(parser, TOKEN_ID)) 
 	{
 		size_t saved_curr = parser->lexer->curr;
-		u32 saved_line = parser->lexer->line;
-		u32 saved_column = parser->lexer->column;
+		uint32_t saved_line = parser->lexer->line;
+		uint32_t saved_column = parser->lexer->column;
 		Token saved_curr_token = parser->curr;
 		Token saved_prev_token = parser->prev;
 		
@@ -512,8 +512,8 @@ static AST_Node *ParseDeclaration(Parser *parser)
 		{
             // Look ahead to see if it's a struct definition
             size_t saved_curr = parser->lexer->curr;
-            u32 saved_line = parser->lexer->line;
-            u32 saved_column = parser->lexer->column;
+            uint32_t saved_line = parser->lexer->line;
+            uint32_t saved_column = parser->lexer->column;
             Token saved_curr_token = parser->curr;
             Token saved_prev_token = parser->prev;
             

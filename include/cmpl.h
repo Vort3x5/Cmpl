@@ -1,23 +1,12 @@
 #pragma once
 
 #include <arena.h>
+#include <stdint.h>
 #include <nob.h>
 
 #include <stdbool.h>
 
 #define AST_FLAG_REVERSE 0x1
-
-typedef char s8;
-typedef unsigned char u8;
-typedef short s16;
-typedef unsigned short u16;
-typedef long s32;
-typedef unsigned long u32;
-typedef long long s64;
-typedef unsigned long long u64;
-
-typedef float f32;
-typedef double f64;
 
 typedef enum {
 	TOKEN_EOF,
@@ -67,9 +56,9 @@ typedef enum {
 typedef struct {
 	Token_Type type;
 	char *lexeme;
-	u32 line, column;
+	uint32_t line, column;
 	union {
-		s64 num;
+		int64_t num;
 		char *str;
 	} value;
 } Token;
@@ -111,16 +100,16 @@ struct AST_Node
 	AST_Node *left, *right, *body;
 	AST_Array children;
 
-	s64 num;
+	int64_t num;
 	char *str;
 
-	u32 line, column, flags;
+	uint32_t line, column, flags;
 };
 
 typedef struct {
 	const char *src;
 	size_t curr, len;
-	u32 line, column;
+	uint32_t line, column;
 	Arena *arena;
 } Lexer;
 

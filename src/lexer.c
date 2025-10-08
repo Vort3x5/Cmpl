@@ -87,7 +87,7 @@ static void LexerSkipWhitespace(Lexer *lexer)
 	}
 }
 
-static Token LexerMakeToken(Lexer *lexer, Token_Type type, const char *lexeme, u32 start_line, u32 start_column)
+static Token LexerMakeToken(Lexer *lexer, Token_Type type, const char *lexeme, uint32_t start_line, uint32_t start_column)
 {
 	Token token = {
 		.type = type,
@@ -107,8 +107,8 @@ static Token LexerMakeToken(Lexer *lexer, Token_Type type, const char *lexeme, u
 
 static Token LexerScanIds(Lexer *lexer)
 {
-	u32 start_line = lexer->line;
-	u32 start_column = lexer->column;
+	uint32_t start_line = lexer->line;
+	uint32_t start_column = lexer->column;
 	size_t start = lexer->curr - 1; // First character already consumed
 
 	while (IsAlNum(LexerPeek(lexer)))
@@ -140,8 +140,8 @@ static Token LexerScanIds(Lexer *lexer)
 
 static Token LexerScanNum(Lexer *lexer)
 {
-	u32 start_line = lexer->line;
-	u32 start_column = lexer->column;
+	uint32_t start_line = lexer->line;
+	uint32_t start_column = lexer->column;
 	size_t start = lexer->curr - 1; // First digit already consumed
 
 	// TODO: Handle floating point numbers
@@ -153,7 +153,7 @@ static Token LexerScanNum(Lexer *lexer)
     memcpy(lexeme, &(lexer->src[start]), len);
     lexeme[len] = '\0';
     
-    Token token = LexerMakeToken(lexer, TOKEN_NUM, lexeme, start_line, start_column);
+	Token token = LexerMakeToken(lexer, TOKEN_NUM, lexeme, start_line, start_column);
     
     token.value.num = 0;
     for (size_t i = 0; i < len; ++i)
@@ -164,8 +164,8 @@ static Token LexerScanNum(Lexer *lexer)
 
 static Token LexerScanStr(Lexer* lexer) 
 {
-	u32 start_line = lexer->line;
-	u32 start_column = lexer->column;
+	uint32_t start_line = lexer->line;
+	uint32_t start_column = lexer->column;
 	size_t start = lexer->curr; // " character consumed
     
     while (LexerPeek(lexer) != '"' && LexerPeek(lexer) != '\0') 
