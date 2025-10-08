@@ -1,0 +1,12 @@
+{
+  "name": "tree-sitter-jai",
+  "version": "1.0.0",
+  "main": "bindings/node",
+  "tree-sitter": [{
+    "scope": "source.jai",
+    "file-types": ["jai"]
+  }],
+  "devDependencies": {
+    "tree-sitter-cli": "^0.20.0"
+  }
+}
