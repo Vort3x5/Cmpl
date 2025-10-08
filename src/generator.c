@@ -17,7 +17,11 @@ static void GenEmit(Generator *g, const char *fmt, ...)
 {
 	va_list args;
 	va_start(args, fmt);
-	nob_sb_appendf(&g->sb, fmt, args);
+	
+	char buffer[4096];
+	vsnprintf(buffer, sizeof(buffer), fmt, args);
+	
+	nob_sb_append_cstr(&g->sb, buffer);
 	va_end(args);
 }
 
@@ -102,7 +106,10 @@ static void GenExpr(Generator *g, AST_Node *node)
 
 static void GenAssign(Generator *g, AST_Node *node) 
 {
-    GenEmit(g, "    _Assign %s, ", node->name);
+	fprintf(stderr, "DEBUG GenAssign: node->name = %p\n", (void*)node->name);
+    if (node->name)
+        fprintf(stderr, "DEBUG GenAssign: '%s'\n", node->name);
+    GenEmit(g, "    _Assign %s, ", node->name ? node->name : "NULL");
     GenExpr(g, node->right);
     GenEmit(g, "\n");
 }
@@ -189,6 +196,11 @@ static void GenStmt(Generator *g, AST_Node *node)
 static void GenProc(Generator *g, AST_Node *node) 
 {
     const char *func_name = node->name ? node->name : "anonymous";
+
+	fprintf(stderr, "DEBUG GenProc: node->name = %p\n", (void*)node->name);
+    fprintf(stderr, "DEBUG GenProc: func_name = '%s'\n", func_name);
+    if (node->name)
+        fprintf(stderr, "DEBUG GenProc: node->name content = '%s'\n", node->name);
     
     int local_count = 0;
     if (node->body && node->body->type == AST_BLOCK) 

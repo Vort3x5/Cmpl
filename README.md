@@ -21,9 +21,10 @@ A Jai-inspired systems programming language built while developing a 2D fantasy 
 ## 🚀 Planned Language Features
 
 ### **1: Bootstrap**
-- [ ] Basic lexer and parser
-- [ ] Procedures and variables (`main :: () { x := 42; }`)
-- [ ] C code generation
+- [x] Basic lexer and parser
+- [x] Procedures and variables (`main :: () { x := 42; }`)
+- [x] Control flow (`if`, `for`, `while`)
+- [x] Fasm macro language code generation
 - [ ] Simple expressions and function calls
 
 ### **2: Memory & Graphics**
@@ -34,7 +35,6 @@ A Jai-inspired systems programming language built while developing a 2D fantasy 
 - [ ] Basic FFI for Vulkan calls
 
 ### **3: Game Logic**
-- [ ] Control flow (`if`, `for`, `while`)
 - [ ] Enums and basic pattern matching
 - [ ] Dynamic arrays (`[dynamic]Type`)
 - [ ] Pointers and basic arithmetic
