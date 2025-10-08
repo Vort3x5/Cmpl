@@ -25,7 +25,7 @@ A Jai-inspired systems programming language built while developing a 2D fantasy 
 - [x] Procedures and variables (`main :: () { x := 42; }`)
 - [x] Control flow (`if`, `for`, `while`)
 - [x] Fasm macro language code generation
-- [ ] Simple expressions and function calls
+- [x] Simple expressions and function calls
 
 ### **2: Memory & Graphics**
 - [ ] Structs and member access
@@ -79,7 +79,6 @@ A Jai-inspired systems programming language built while developing a 2D fantasy 
 ### **Game Metrics**
 - Performance: Stable 60 FPS
 - Completeness: Playable start-to-finish
-- Fun factor: Actually enjoyable to play
 
 ## 🚨 Development Rules
 
