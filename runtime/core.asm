@@ -4,6 +4,7 @@ format ELF64 executable 3
 entry _start
 
 include 'runtime/expr.asm'
+include 'runtime/ctrl_flow.asm'
 
 macro _SysExit code
 {
