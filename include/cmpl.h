@@ -123,11 +123,20 @@ typedef struct
     bool panic_mode;
 } Parser;
 
+typedef struct {
+	const char *name;
+	size_t size;
+} TypeInfo;
+
 typedef struct
 {
 	Nob_String_Builder sb;
 	Arena *arena;
 	int local_offset, temp_count;
+	struct {
+		TypeInfo *items;
+		size_t count, capacity;
+	} types;
 } Generator;
 
 #ifdef LEXER_DEF

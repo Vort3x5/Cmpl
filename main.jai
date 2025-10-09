@@ -1,31 +1,24 @@
-main :: () {
-    x := 10;
-    y := 20;
-	sum := x + y;
-    result := sum * 2;
+test_arithmetic :: () -> int {
+    a := 10;
+    b := 5;
+    c := a + b;
+    return c;
 }
 
-factorial :: () {
-    n := 5;
-    result := 1;
+test_while :: () -> int {
+    sum := 0;
     i := 1;
     
-    while i < n + 1 {
-        result := result * i;
-        i := i + 1;
+    while i < 11 {
+        sum = sum + i;
+        i = i + 1;
     }
     
-    return result;
+    return sum;
 }
 
-test_if :: () {
-    a := 17;
-    b := 23;
-    
-    if a > b {
-        return a;
-    } 
-	else {
-        return b;
-    }
+main :: () -> int {
+    t1 := test_arithmetic();
+    t2 := test_while();
+    return t1 + t2;
 }

@@ -336,21 +336,39 @@ static AST_Node *ParseStatement(Parser *parser)
 		Token saved_prev_token = parser->prev;
 		
 		ParserAdvance(parser);
+
+		if (ParserCheck(parser, TOKEN_COLON)) 
+		{
+            Token var_name = parser->prev;
+            ParserAdvance(parser); // consume ':'
+            
+            if (ParserMatch(parser, TOKEN_ID)) 
+			{
+                Token type_name = parser->prev;
+                ParserConsume(parser, TOKEN_SEMICOLON, "Expected ';' after type declaration");
+                
+                AST_Node *node = ASTNodeCreate(parser, AST_ASSIGNMENT);
+                node->name = arena_strdup(parser->arena, var_name.lexeme);
+                
+                AST_Node *type_node = ASTNodeCreate(parser, AST_TYPE);
+                type_node->name = arena_strdup(parser->arena, type_name.lexeme);
+                node->right = type_node;
+                
+                return node;
+            }
+        }
 		
 		if (ParserCheck(parser, TOKEN_ASSIGN)) 
 			return ParseVariableAssignment(parser);
 		
-		// Restore complete state
 		parser->lexer->curr = saved_curr;
 		parser->lexer->line = saved_line;
 		parser->lexer->column = saved_column;
 		parser->curr = saved_curr_token;
 		parser->prev = saved_prev_token;
 		
-		// Re-parse from the identifier as a full expression/assignment
 		AST_Node *lhs = ParseExpression(parser);
 		
-		// Check for regular assignment: lhs = rhs
 		if (ParserCheck(parser, TOKEN_EQ_ASSIGN)) 
 		{
 			ParserAdvance(parser);
