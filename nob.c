@@ -15,6 +15,7 @@ bool BuildAll()
     nob_cmd_append(&cmd, "src/lexer.c");
     nob_cmd_append(&cmd, "src/parser.c");
     nob_cmd_append(&cmd, "src/generator.c");
+    nob_cmd_append(&cmd, "src/tac.c");
     
     return nob_cmd_run(&cmd);
 }

@@ -64,7 +64,68 @@ static void GenEmit(Generator *g, const char *fmt, ...)
 	va_end(args);
 }
 
-static void GenBinOp(Generator *g, AST_Node *node) 
+static void EmitTACInst(Generator *g, TAC_Inst *inst) 
+{
+	bool src1_is_num = (inst->src1[0] >= '0' && inst->src1[0] <= '9') || inst->src1[0] == '-';
+	bool src2_is_num = (inst->src2[0] >= '0' && inst->src2[0] <= '9') || inst->src2[0] == '-';
+    switch (inst->type) 
+	{
+        case TAC_BINOP: 
+            const char *macro = NULL;
+            if (strcmp(inst->op, "+") == 0) macro = "_Add";
+            else if (strcmp(inst->op, "-") == 0) macro = "_Sub";
+            else if (strcmp(inst->op, "*") == 0) macro = "_Mul";
+            else if (strcmp(inst->op, "==") == 0) macro = "_Equal";
+            else if (strcmp(inst->op, "<") == 0) macro = "_Less";
+            else if (strcmp(inst->op, ">") == 0) macro = "_Greater";
+            
+            if (macro) 
+			{
+                GenEmit(g, "    _Assign %s, <%s ", inst->dest, macro);
+                
+                if (src1_is_num) 
+                    GenEmit(g, "_Num %s", inst->src1);
+				else
+                    GenEmit(g, "<_Var %s>", inst->src1);
+                
+                GenEmit(g, ", ");
+                
+                if (src2_is_num) 
+                    GenEmit(g, "_Num %s", inst->src2);
+                else
+                    GenEmit(g, "<_Var %s>", inst->src2);
+                
+                GenEmit(g, ">\n");
+            }
+            break;
+        
+        case TAC_COPY: 
+            if (src1_is_num)
+                GenEmit(g, "    _Assign %s, _Num %s\n", inst->dest, inst->src1);
+            else
+                GenEmit(g, "    _Assign %s, <_Var %s>\n", inst->dest, inst->src1);
+            break;
+        
+        case TAC_CALL: 
+            GenEmit(g, "    call func_%s\n", inst->src1);
+            GenEmit(g, "    _StoreVar %s, rax\n", inst->dest);
+            break;
+        
+        case TAC_RETURN: 
+            bool src1_is_num = (inst->src1[0] >= '0' && inst->src1[0] <= '9') || inst->src1[0] == '-';
+            
+            if (src1_is_num) 
+                GenEmit(g, "    _Return _Num %s\n", inst->src1);
+            else
+                GenEmit(g, "    _Return <_Var %s>\n", inst->src1);
+            break;
+        
+        default:
+            break;
+    }
+}
+
+static void GenBinOp(Generator *g, AST_Node *node)
 {
     const char *op = node->name;
     
@@ -136,6 +197,11 @@ static void GenExpr(Generator *g, AST_Node *node)
         case AST_BIN_OP:
             GenBinOp(g, node);
             break;
+
+		case AST_CALL:
+			if (node->left && node->left->type == AST_ID) 
+				GenEmit(g, "call label_%s", node->left->name);
+			break;
             
         default:
             nob_log(NOB_ERROR, "Unsupported expression type: %d", node->type);
@@ -150,7 +216,7 @@ static void GenAssign(Generator *g, AST_Node *node)
         AST_Node *call = node->right;
         if (call->left && call->left->type == AST_ID) 
 		{
-            GenEmit(g, "    call %s\n", call->left->name);
+            GenEmit(g, "    call label_%s\n", call->left->name);
             GenEmit(g, "    _StoreVar %s, rax\n", node->name);
         }
         return;
@@ -161,14 +227,21 @@ static void GenAssign(Generator *g, AST_Node *node)
     GenEmit(g, "\n");
 }
 
-static void GenRet(Generator *g, AST_Node *node) 
+static void GenRet(Generator *g, AST_Node *node)
 {
-    GenEmit(g, "    _Return ");
-    if (node->right) 
-        GenExpr(g, node->right);
+    if (NeedsTempVar(node->right)) 
+	{
+        GenEmit(g, "    _Return _retval\n");
+    } 
 	else 
-        GenEmit(g, "_Num 0");
-    GenEmit(g, "\n");
+	{
+        GenEmit(g, "    _Return ");
+        if (node->right) 
+            GenExpr(g, node->right);
+        else 
+            GenEmit(g, "_Num 0");
+        GenEmit(g, "\n");
+    }
 }
 
 static void GenIf(Generator *g, AST_Node *node) 
@@ -288,6 +361,7 @@ static void GenProc(Generator *g, AST_Node *node)
     const char *func_name = node->name ? node->name : "anonymous";
     
     int locals_size = 0;
+    TAC_Inst *tac = FuncBodyToTAC(node->body, g->arena);
     
     if (node->body && node->body->type == AST_BLOCK) 
 	{
@@ -308,7 +382,20 @@ static void GenProc(Generator *g, AST_Node *node)
         }
     }
     
-    GenEmit(g, "_FuncBeginWithLocals %s, %d\n", func_name, locals_size);
+    int temp_count = 0;
+    for (TAC_Inst *inst = tac; inst != NULL; inst = inst->next) 
+	{
+        // Count unique temps (anything starting with _t)
+        if (inst->dest && inst->dest[0] == '_' && inst->dest[1] == 't') 
+		{
+            int temp_num = atoi(inst->dest + 2);
+            if (temp_num >= temp_count) 
+                temp_count = temp_num + 1;
+        }
+    }
+    locals_size += temp_count * 8;
+    
+    GenEmit(g, "_FuncBeginWithLocals func_%s, %d\n", func_name, locals_size);
     
     int offset = 0;
     if (node->body && node->body->type == AST_BLOCK) 
@@ -320,6 +407,7 @@ static void GenProc(Generator *g, AST_Node *node)
 			{
                 if (stmt->right && stmt->right->type == AST_TYPE) 
 				{
+                    // Type declaration
                     const char *type_name = stmt->right->name;
                     int type_size = GetTypeSize(g, type_name);
                     offset += type_size;
@@ -337,10 +425,17 @@ static void GenProc(Generator *g, AST_Node *node)
         }
     }
     
+    for (int i = 0; i < temp_count; i++) 
+	{
+        offset += 8;
+        GenEmit(g, "    _DeclareVar _t%d, 8\n", i);
+        GenEmit(g, "    _t%d_offset = %d\n", i, offset);
+    }
+    
     GenEmit(g, "\n");
     
-    if (node->body) 
-        GenStmt(g, node->body);
+    for (TAC_Inst *inst = tac; inst != NULL; inst = inst->next) 
+        EmitTACInst(g, inst);
     
     GenEmit(g, "_FuncEnd\n\n");
 }

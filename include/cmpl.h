@@ -92,8 +92,7 @@ typedef struct {
 	size_t size, used;
 } AST_Array;
 
-struct AST_Node 
-{
+struct AST_Node {
 	AST_Type type;
 	char *name;
 
@@ -113,8 +112,7 @@ typedef struct {
 	Arena *arena;
 } Lexer;
 
-typedef struct 
-{
+typedef struct {
     Lexer *lexer;
     Token curr;
     Token prev;
@@ -128,8 +126,7 @@ typedef struct {
 	size_t size;
 } TypeInfo;
 
-typedef struct
-{
+typedef struct {
 	Nob_String_Builder sb;
 	Arena *arena;
 	int local_offset, temp_count;
@@ -138,6 +135,36 @@ typedef struct
 		size_t count, capacity;
 	} types;
 } Generator;
+
+typedef enum {
+    TAC_ASSIGN,     
+    TAC_BINOP,      
+    TAC_COPY,       
+    TAC_CALL,       
+    TAC_PARAM,      
+    TAC_RETURN,     
+    TAC_LABEL,      
+    TAC_JUMP,       
+    TAC_JUMP_IF,    
+    TAC_JUMP_IF_NOT,
+} TAC_Op;
+
+typedef struct TAC_Inst TAC_Inst;
+struct TAC_Inst {
+    TAC_Op type;
+    char *dest;
+    char *src1;
+    char *src2;
+    char *op;  
+    TAC_Inst *next;
+};
+
+typedef struct {
+    TAC_Inst *head;
+    TAC_Inst *tail;
+    int temp_count;
+    Arena *arena;
+} TAC_Builder;
 
 #ifdef LEXER_DEF
     const char* token_names[] = {
@@ -224,6 +251,11 @@ typedef struct
     static void GenStmt(Generator *g, AST_Node *node);
 #endif
 
+#ifdef TAC_DEF
+	static char* ExprToTAC(TAC_Builder *tb, AST_Node *node);
+	static void StmtToTAC(TAC_Builder *tb, AST_Node *node);
+#endif
+
 Lexer* LexerCreate(const char* src, Arena* arena);
 Token LexerNextToken(Lexer* lexer);
 Token LexerPeekToken(Lexer* lexer);
@@ -233,8 +265,8 @@ void LexerDumpTokenize(const char* src, Arena* arena);
 Parser* ParserCreate(Lexer* lexer, Arena* arena);
 AST_Node* ParserParseProgram(Parser* parser);
 bool ParserHadError(Parser* parser);
-
 void ASTPrintNode(AST_Node* node, int depth);
 void ASTPrintProgram(AST_Node* program);
 
+TAC_Inst* FuncBodyToTAC(AST_Node *body, Arena *arena);
 bool Generate(AST_Node *ast, const char *output_path, Arena *arena);

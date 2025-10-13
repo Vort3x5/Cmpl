@@ -53,7 +53,12 @@ macro _Assign var_name, expr
     _StoreVar var_name, rax
 }
 
-; Comparison operators
+macro _TempAssign name, expr
+{
+	expr
+	name equ rax
+}
+
 macro _Equal left, right
 {
     common

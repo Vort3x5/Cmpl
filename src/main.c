@@ -2,7 +2,7 @@
 #define NOB_IMPLEMENTATION
 #include <cmpl.h>
 
-void CompileJaiFile(const char *src, const char *out, Arena *arena) 
+void CompileJaiFile(const char *src, const char *out, Arena *arena)
 {
     printf("=== Compiling %s ===\n", src);
     
