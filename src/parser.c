@@ -361,6 +361,18 @@ static AST_Node *ParseStatement(Parser *parser)
 		if (ParserCheck(parser, TOKEN_ASSIGN)) 
 			return ParseVariableAssignment(parser);
 		
+		if (ParserCheck(parser, TOKEN_EQ_ASSIGN)) 
+		{
+			ParserAdvance(parser);
+			AST_Node *rhs = ParseExpression(parser);
+			ParserConsume(parser, TOKEN_SEMICOLON, "Expected ';' after assignment");
+			
+			AST_Node *node = ASTNodeCreate(parser, AST_ASSIGNMENT);
+			node->name = arena_strdup(parser->arena, saved_curr_token.lexeme);
+			node->right = rhs;
+			return node;
+		}
+		
 		parser->lexer->curr = saved_curr;
 		parser->lexer->line = saved_line;
 		parser->lexer->column = saved_column;
@@ -368,18 +380,6 @@ static AST_Node *ParseStatement(Parser *parser)
 		parser->prev = saved_prev_token;
 		
 		AST_Node *lhs = ParseExpression(parser);
-		
-		if (ParserCheck(parser, TOKEN_EQ_ASSIGN)) 
-		{
-			ParserAdvance(parser);
-			AST_Node *rhs = ParseExpression(parser);
-			ParserConsume(parser, TOKEN_SEMICOLON, "Expected ';' after assignment");
-			
-			AST_Node *assignment = ASTNodeCreate(parser, AST_ASSIGNMENT);
-			assignment->left = lhs;
-			assignment->right = rhs;
-			return assignment;
-		}
 		
 		if (lhs && lhs->type == AST_CALL) 
 		{

@@ -145,10 +145,18 @@ static void GenExpr(Generator *g, AST_Node *node)
 
 static void GenAssign(Generator *g, AST_Node *node) 
 {
-	fprintf(stderr, "DEBUG GenAssign: node->name = %p\n", (void*)node->name);
-    if (node->name)
-        fprintf(stderr, "DEBUG GenAssign: '%s'\n", node->name);
-    GenEmit(g, "    _Assign %s, ", node->name ? node->name : "NULL");
+    if (node->right && node->right->type == AST_CALL) 
+	{
+        AST_Node *call = node->right;
+        if (call->left && call->left->type == AST_ID) 
+		{
+            GenEmit(g, "    call %s\n", call->left->name);
+            GenEmit(g, "    _StoreVar %s, rax\n", node->name);
+        }
+        return;
+    }
+    
+    GenEmit(g, "    _Assign %s, ", node->name);
     GenExpr(g, node->right);
     GenEmit(g, "\n");
 }
