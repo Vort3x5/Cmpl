@@ -371,62 +371,53 @@ static void GenProc(Generator *g, AST_Node *node)
     
     TAC_Inst *tac = FuncBodyToTAC(node->body, g->arena);
     
+    // Collect ALL variables from function body (including nested scopes)
+    AST_Array all_vars = {0};
+    ASTArrayInit(&all_vars);
+    CollectVariables(node->body, &all_vars, g->arena);
+    
+    // Calculate locals size
     int locals_size = 0;
     
-    if (node->body && node->body->type == AST_BLOCK) 
-	{
-        for (size_t i = 0; i < node->body->children.used; ++i) {
-            AST_Node *stmt = node->body->children.data[i];
-            if (stmt->type == AST_ASSIGNMENT) 
-			{
-                if (stmt->right && stmt->right->type == AST_TYPE) 
-				{
-                    const char *type_name = stmt->right->name;
-                    int type_size = GetTypeSize(g, type_name);
-                    locals_size += type_size;
-                } 
-				else 
-				{
-                    locals_size += 8;
-                }
-            }
+    // Count size of all variables
+    for (size_t i = 0; i < all_vars.used; i++) {
+        AST_Node *var = all_vars.data[i];
+        if (var->right && var->right->type == AST_TYPE) {
+            const char *type_name = var->right->name;
+            int type_size = GetTypeSize(g, type_name);
+            locals_size += type_size;
+        } else {
+            locals_size += 8;
         }
     }
     
+    // Count temps from TAC
     int temp_count = TACGetMaxTemp(tac) + 1;
-    if (temp_count > 0) 
+    if (temp_count > 0) {
         locals_size += temp_count * 8;
+    }
     
     GenEmit(g, "_FuncBeginWithLocals func_%s, %d\n", func_name, locals_size);
     
+    // Declare all variables
     int offset = 0;
-    if (node->body && node->body->type == AST_BLOCK) 
-	{
-        for (size_t i = 0; i < node->body->children.used; i++) 
-		{
-            AST_Node *stmt = node->body->children.data[i];
-            if (stmt->type == AST_ASSIGNMENT && stmt->name) 
-			{
-                if (stmt->right && stmt->right->type == AST_TYPE)
-				{
-                    const char *type_name = stmt->right->name;
-                    int type_size = GetTypeSize(g, type_name);
-                    offset += type_size;
-                    GenEmit(g, "    _DeclareVar %s, %d\n", stmt->name, type_size);
-                    GenEmit(g, "    %s_offset = %d\n", stmt->name, offset);
-                } 
-				else 
-				{
-                    offset += 8;
-                    GenEmit(g, "    _DeclareVar %s, 8\n", stmt->name);
-                    GenEmit(g, "    %s_offset = %d\n", stmt->name, offset);
-                }
-            }
+    for (size_t i = 0; i < all_vars.used; i++) {
+        AST_Node *var = all_vars.data[i];
+        if (var->right && var->right->type == AST_TYPE) {
+            const char *type_name = var->right->name;
+            int type_size = GetTypeSize(g, type_name);
+            offset += type_size;
+            GenEmit(g, "    _DeclareVar %s, %d\n", var->name, type_size);
+            GenEmit(g, "    %s_offset = %d\n", var->name, offset);
+        } else {
+            offset += 8;
+            GenEmit(g, "    _DeclareVar %s, 8\n", var->name);
+            GenEmit(g, "    %s_offset = %d\n", var->name, offset);
         }
     }
     
-    for (int i = 0; i < temp_count; i++) 
-	{
+    // Declare temp variables
+    for (int i = 0; i < temp_count; i++) {
         offset += 8;
         GenEmit(g, "    _DeclareVar _t%d, 8\n", i);
         GenEmit(g, "    _t%d_offset = %d\n", i, offset);

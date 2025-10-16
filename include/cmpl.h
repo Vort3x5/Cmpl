@@ -261,9 +261,11 @@ Token LexerPeekToken(Lexer* lexer);
 void LexerPrintToken(Token token);
 void LexerDumpTokenize(const char* src, Arena* arena);
 
+void CollectVariables(AST_Node *node, AST_Array *vars, Arena *arena);
 Parser* ParserCreate(Lexer* lexer, Arena* arena);
 AST_Node* ParserParseProgram(Parser* parser);
 bool ParserHadError(Parser* parser);
+void ASTArrayInit(AST_Array *array);
 void ASTPrintNode(AST_Node* node, int depth);
 void ASTPrintProgram(AST_Node* program);
 

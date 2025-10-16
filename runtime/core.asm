@@ -57,6 +57,6 @@ macro _FuncBeginWithLocals name, locals_size
 }
 
 _start:
-    call main
+    call func_main
 	mov rdi, rax
 	_SysExit rdi

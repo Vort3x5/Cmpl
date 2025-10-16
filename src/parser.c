@@ -17,7 +17,7 @@ static AST_Node *ASTNodeCreate(Parser *parser, AST_Type type)
     return node;
 }
 
-static void ASTArrayInit(AST_Array *array) 
+void ASTArrayInit(AST_Array *array) 
 {
 	*array = (AST_Array){
 		.data = NULL,
@@ -41,6 +41,47 @@ static void ASTArrayPush(AST_Array *array, AST_Node *node, Arena *arena)
     }
     
     array->data[array->used++] = node;
+}
+
+void CollectVariables(AST_Node *node, AST_Array *vars, Arena *arena) 
+{
+    if (!node) return;
+    
+    switch (node->type) {
+        case AST_ASSIGNMENT:
+            // Add variable name to list if not already there
+            if (node->name) {
+                bool found = false;
+                for (size_t i = 0; i < vars->used; i++) {
+                    if (strcmp(vars->data[i]->name, node->name) == 0) {
+                        found = true;
+                        break;
+                    }
+                }
+                if (!found) {
+                    ASTArrayPush(vars, node, arena);
+                }
+            }
+            break;
+            
+        case AST_BLOCK:
+            for (size_t i = 0; i < node->children.used; i++) {
+                CollectVariables(node->children.data[i], vars, arena);
+            }
+            break;
+            
+        case AST_IF:
+            CollectVariables(node->body, vars, arena);
+            CollectVariables(node->right, vars, arena);
+            break;
+            
+        case AST_WHILE:
+            CollectVariables(node->body, vars, arena);
+            break;
+            
+        default:
+            break;
+    }
 }
 
 static void ParserError(Parser *parser, const char *message) 
