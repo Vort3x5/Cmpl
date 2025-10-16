@@ -252,7 +252,6 @@ typedef struct {
 #endif
 
 #ifdef TAC_DEF
-	static char* ExprToTAC(TAC_Builder *tb, AST_Node *node);
 	static void StmtToTAC(TAC_Builder *tb, AST_Node *node);
 #endif
 
@@ -268,5 +267,8 @@ bool ParserHadError(Parser* parser);
 void ASTPrintNode(AST_Node* node, int depth);
 void ASTPrintProgram(AST_Node* program);
 
+int TACGetMaxTemp(TAC_Inst *tac);
+void TACInit(TAC_Builder *tb, Arena *arena);
+char* ExprToTAC(TAC_Builder *tb, AST_Node *node);
 TAC_Inst* FuncBodyToTAC(AST_Node *body, Arena *arena);
 bool Generate(AST_Node *ast, const char *output_path, Arena *arena);

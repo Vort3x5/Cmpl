@@ -8,7 +8,7 @@ bool BuildAll()
     Nob_Cmd cmd = {0};
     nob_cc(&cmd);
     nob_cc_flags(&cmd);
-    nob_cmd_append(&cmd, "-I", "include");
+    nob_cmd_append(&cmd, "-g", "-I", "include", "-Wno-misleading-indentation");
     nob_cc_output(&cmd, "out/cmpl");
     
     nob_cmd_append(&cmd, "src/main.c");

@@ -51,7 +51,7 @@ static void ParserError(Parser *parser, const char *message)
     parser->panic_mode = true;
     parser->had_err = true;
     
-    printf("[Line %zu, Col %zu] Parser Error", parser->prev.line, parser->prev.column);
+    printf("[Line %u, Col %u] Parser Error", parser->prev.line, parser->prev.column);
     if (parser->prev.type == TOKEN_EOF) 
         printf(" at end");
     else if (parser->prev.type == TOKEN_ERR);
@@ -143,8 +143,7 @@ static AST_Node *ParsePrimary(Parser *parser)
 	{
 		AST_Node *expr = ParseIdentifier(parser);
 		
-		// Handle postfix operations: array[index], struct.field, func()
-		while (true) 
+		while (true)
 		{
 			if (ParserCheck(parser, TOKEN_L_BRACKET)) 
 			{
@@ -172,7 +171,6 @@ static AST_Node *ParsePrimary(Parser *parser)
 			else 
 				break;
 		}
-		
 		return expr;
 	}
     
@@ -726,7 +724,7 @@ void ASTPrintNode(AST_Node* node, int depth)
         printf(" '%s'", node->name);
     
     if (node->type == AST_NUM) 
-        printf(" (%lld)", node->num);
+        printf(" (%ld)", node->num);
 
 	if (node->type == AST_BIN_OP && !node->left)
         printf(" (UNARY)");

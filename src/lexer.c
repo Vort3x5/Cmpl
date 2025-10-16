@@ -386,7 +386,7 @@ Token LexerPeekToken(Lexer* lexer)
 
 void LexerPrintToken(Token token) 
 {
-    printf("Token{type=%s, lexeme=\"%s\", line=%zu, col=%zu", 
+    printf("Token{type=%s, lexeme=\"%s\", line=%u, col=%u", 
            token_names[token.type], 
            token.lexeme ? token.lexeme : "",
            token.line, 
@@ -394,7 +394,7 @@ void LexerPrintToken(Token token)
 		   );
     
     if (token.type == TOKEN_NUM) 
-        printf(", value=%lld", token.value.num);
+        printf(", value=%ld", token.value.num);
 	else if (token.type == TOKEN_STR) 
         printf(", str=\"%s\"", token.value.str ? token.value.str : "");
     printf("}\n");
