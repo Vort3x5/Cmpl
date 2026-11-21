@@ -1,17 +1,14 @@
 #define NOB_IMPLEMENTATION
 #include "include/nob.h"
 
-static const char *FindLibVulkan(void)
+/* Caller owns the returned string (nob_temp lifetime). */
+static const char *FindSharedLib(const char *name)
 {
-    static const char *candidates[] = {
-        "/usr/lib/libvulkan.so",
-        "/usr/lib64/libvulkan.so",
-        "/lib/libvulkan.so",
-        "/lib64/libvulkan.so",
-    };
-    for (size_t i = 0; i < NOB_ARRAY_LEN(candidates); i++) {
-        if (nob_file_exists(candidates[i]) > 0)
-            return candidates[i];
+    static const char *dirs[] = { "/usr/lib", "/usr/lib64", "/lib", "/lib64" };
+    for (size_t i = 0; i < NOB_ARRAY_LEN(dirs); i++) {
+        const char *path = nob_temp_sprintf("%s/%s", dirs[i], name);
+        if (nob_file_exists(path) > 0)
+            return path;
     }
     return NULL;
 }
@@ -35,14 +32,15 @@ bool BuildAll(void)
     return nob_cmd_run(&cmd);
 }
 
-/* Headless Vulkan helper used by examples/BasicJai/vulkan_triangle.jai.
- * Prefer an absolute libvulkan.so path: Nix ld often fails -lvulkan without
- * a nix-shell (NIX_LDFLAGS). Absolute path bypasses the search. */
+/* Headless + Wayland Vulkan helpers for BasicJai examples. */
 bool BuildVulkanSo(void)
 {
     const char *out = "examples/vulkan/libcmpl_vk.so";
-    const char *src = "examples/vulkan/cmpl_vk.c";
-    const char *inputs[] = { src };
+    const char *inputs[] = {
+        "examples/vulkan/cmpl_vk.c",
+        "examples/vulkan/cmpl_vk_wl.c",
+        "examples/vulkan/wayland/xdg-shell-protocol.c",
+    };
 
     int rebuild = nob_needs_rebuild(out, inputs, NOB_ARRAY_LEN(inputs));
     if (rebuild < 0)
@@ -56,15 +54,26 @@ bool BuildVulkanSo(void)
     nob_cc(&cmd);
     nob_cmd_append(&cmd, "-shared", "-fPIC", "-O2",
                    "-I", "examples/vulkan/include",
-                   "-o", out, src);
+                   "-I", "examples/vulkan",
+                   "-o", out,
+                   inputs[0], inputs[1], inputs[2]);
 
-    const char *vk = FindLibVulkan();
+    const char *vk = FindSharedLib("libvulkan.so");
     if (vk) {
         nob_log(NOB_INFO, "Linking Vulkan via %s", vk);
         nob_cmd_append(&cmd, vk);
     } else {
-        nob_log(NOB_INFO, "libvulkan.so not found in /usr|/lib — trying -lvulkan (use nix-shell / nix develop)");
+        nob_log(NOB_INFO, "libvulkan.so not in /usr|/lib — trying -lvulkan (use nix-shell)");
         nob_cmd_append(&cmd, "-lvulkan");
+    }
+
+    const char *wl = FindSharedLib("libwayland-client.so");
+    if (wl) {
+        nob_log(NOB_INFO, "Linking Wayland via %s", wl);
+        nob_cmd_append(&cmd, wl);
+    } else {
+        nob_log(NOB_INFO, "libwayland-client.so not found — trying -lwayland-client");
+        nob_cmd_append(&cmd, "-lwayland-client");
     }
 
     if (!nob_cmd_run(&cmd)) {

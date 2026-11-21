@@ -8,11 +8,12 @@ Game milestone 1: prove Vulkan works end-to-end from a `.jai` entry point.
 |------|------|
 | `include/vulkan/` | Vendored Vulkan-Headers (v1.2.198) |
 | `shaders/tri.*.spv` | Minimal red-triangle SPIR-V |
-| `cmpl_vk.c` | Renderer (`cmpl_vk_triangle`) |
+| `cmpl_vk.c` | Headless renderer (`cmpl_vk_triangle`) |
+| `cmpl_vk_wl.c` | Wayland + swapchain (`cmpl_vk_window`) |
+| `wayland/` | Vendored xdg-shell protocol |
 | `libcmpl_vk.so` | Built by `./nob all` / `./nob vk` |
-| `../BasicJai/vulkan_triangle.jai` | Jai driver via `#library` / `#foreign` |
-
-Window/WSI (Wayland) comes later — this path is headless so it works without a compositor.
+| `../BasicJai/vulkan_triangle.jai` | Headless Jai driver |
+| `../BasicJai/vulkan_window.jai` | On-screen Jai driver |
 
 ## Build & test
 
@@ -36,11 +37,21 @@ nix-shell --run 'fish'   # or: nix develop -c fish
 echo $status
 ```
 
-`./nob vk` rebuilds only `examples/vulkan/libcmpl_vk.so` (links via absolute `/usr/lib/libvulkan.so` when present, else `-lvulkan`).
+`./nob vk` rebuilds only `examples/vulkan/libcmpl_vk.so` (absolute `/usr/lib/libvulkan.so` + `libwayland-client.so` when present).
 
-**Expect:** stderr `cmpl_vk: center pixel rgba=255,0,0,255` and **exit 0**.
+**Headless expect:** stderr `cmpl_vk: center pixel rgba=255,0,0,255` and **exit 0**.
+
+### On-screen (Wayland)
+
+```bash
+./out/cmpl examples/BasicJai/vulkan_window.jai
+CMPL_VK_FRAMES=120 ./out/out; echo $?
+```
+
+**Expect:** window titled `Cmpl Vulkan` with a red triangle; stderr `presented N frames`; **exit 0**.  
+No compositor → exit **10**. `CMPL_VK_FRAMES=0` runs until the window is closed.
 
 ## Notes
 
 - Shaders are loaded from `examples/vulkan/shaders/` relative to the **current working directory** (run from repo root).
-- Next step toward the game: Wayland surface + swapchain, then move more setup from C into Jai as the language grows (`*T` structs matching Vk*).
+- Next: textured sprites (float + memory/slices as needed).

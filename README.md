@@ -59,13 +59,13 @@ cc -shared -fPIC -o examples/c_lib/libadd.so examples/c_lib/add.c
 ./out/out; echo $?   # 30
 ```
 
-Vulkan triangle (needs `libvulkan` — on Nix use the shell):
+Vulkan (needs `libvulkan` + Wayland for the window — on Nix use the shell):
 
 ```bash
 nix-shell          # or: nix develop
 ./nob all          # builds out/cmpl + examples/vulkan/libcmpl_vk.so
-./out/cmpl examples/BasicJai/vulkan_triangle.jai
-./out/out; echo $?   # 0  + red pixel on stderr
+./out/cmpl examples/BasicJai/vulkan_triangle.jai && ./out/out; echo $?   # headless red pixel
+./out/cmpl examples/BasicJai/vulkan_window.jai && CMPL_VK_FRAMES=90 ./out/out; echo $?  # Wayland
 ```
 
 Details: [examples/vulkan/README.md](examples/vulkan/README.md) · Nix: [`shell.nix`](shell.nix) / [`flake.nix`](flake.nix)
@@ -103,7 +103,7 @@ Details: [examples/vulkan/README.md](examples/vulkan/README.md) · Nix: [`shell.
 - [x] Arena bump (`cmpl_rt`)
 - [x] `#foreign` + real `.so` link (`ld`)
 - [x] Vulkan triangle (headless red pixel via `libcmpl_vk.so`)
-- [ ] Wayland surface + on-screen swapchain
+- [x] Wayland surface + on-screen swapchain (`cmpl_vk_window`)
 
 ### 3–6
 See earlier roadmap: enums, pointers-as-first-class APIs, `#run`, SIMD/`#soa`, self-hosting.
@@ -113,6 +113,7 @@ See earlier roadmap: enums, pointers-as-first-class APIs, `#run`, SIMD/`#soa`, s
 | Phase | Game Goal | Technical Focus |
 |-------|-----------|----------------|
 | 1 | Vulkan triangle | `#foreign` + `libvulkan` |
+| 1b | On-screen triangle | Wayland + swapchain |
 | 2 | Textured sprites | Memory / slices |
 | 3 | Moving player | Game logic |
 | 4 | NPCs and dialog | Data-driven content |

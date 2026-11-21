@@ -1,9 +1,9 @@
 # Dev shell for Cmpl (NixOS / nix-on-other-distros).
 # Usage:
 #   nix-shell
-#   nix develop   # if you use the flake
+#   nix develop   # via flake.nix
 #
-# Inside the shell, -lvulkan resolves via vulkan-loader in NIX_LDFLAGS.
+# Inside the shell, -lvulkan / -lwayland-client resolve via NIX_LDFLAGS.
 { pkgs ? import <nixpkgs> { } }:
 
 pkgs.mkShell {
@@ -12,17 +12,23 @@ pkgs.mkShell {
     fasm
     pkg-config
     vulkan-loader
+    vulkan-headers
+    wayland
+    wayland-scanner
+    wayland-protocols
     # ICD providers for headless / real GPU at runtime
     mesa
   ];
 
-  # Runtime discovery of libvulkan + Mesa ICDs
   LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath [
     pkgs.vulkan-loader
     pkgs.mesa
+    pkgs.wayland
   ];
 
   shellHook = ''
-    echo "Cmpl nix shell: fasm=$(command -v fasm)  vulkan=$(pkg-config --libs vulkan 2>/dev/null || echo '-lvulkan')"
+    echo "Cmpl nix shell: fasm=$(command -v fasm)"
+    echo "  vulkan=$(pkg-config --libs vulkan 2>/dev/null || echo '-lvulkan')"
+    echo "  wayland=$(pkg-config --libs wayland-client 2>/dev/null || echo '-lwayland-client')"
   '';
 }
