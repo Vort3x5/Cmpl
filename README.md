@@ -29,11 +29,12 @@ Syntax and semantics are aligned with [The Way to Jai](https://github.com/Ivo-Ba
 
 ```bash
 ./nob all
+./nob test                     # builds cmpl + runs tests.json
 ./out/cmpl <file.jai>          # → out/out.asm → out/out
 ./out/out; echo $?             # exit status = low 8 bits of main's return
 ```
 
-Requires `cc`, `fasm`, and (for `#library` `.so` demos) `ld` on `PATH`.
+Requires `cc`, `fasm`, and (for `#library` `.so` demos) `ld` on `PATH`. For `vulkan_ffi` / Vulkan tests use `nix-shell` first.
 
 ### How to test (look at exit code + side effects)
 
@@ -46,6 +47,11 @@ Requires `cc`, `fasm`, and (for `#library` `.so` demos) `ld` on `PATH`.
 | `examples/BasicJai/pointers.jai` | **108** | `*Type`, `*a`, `b.*` |
 | `examples/BasicJai/nested_call.jai` | **6** | `add(1, add(2, 3))` |
 | `examples/BasicJai/u32_fields.jai` | **5** | sized `u32` field store/load |
+| `examples/BasicJai/u32_local.jai` | **1** | `u32` local in non-`main` (8-byte slot) |
+| `examples/BasicJai/u32_array.jai` | **7** | `[4]u32` element store/load |
+| `examples/BasicJai/u32_deref.jai` | **42** | `*u32` store does not clobber neighbor |
+| `examples/BasicJai/defer_call_return.jai` | **7** | `defer fval(1); return 7` |
+| `examples/BasicJai/for_call_bound.jai` | **4** | `for i: 0..fval(2)` |
 | `examples/BasicJai/shift.jai` | **8** | `1 << 3` |
 | `examples/BasicJai/sse_call_expr.jai` | **4** | `1 + fval(2)` — TAC stack temps / SSE ABI |
 | `examples/BasicJai/arena.jai` | **42** | `#foreign cmpl_rt` → `arena_alloc` |

@@ -149,8 +149,10 @@ typedef struct {
 
 typedef struct {
 	const char *name;
-	const char *type_name;
-	int array_len; // 0 = scalar; >0 = [N]type on stack
+	const char *type_name; /* element / pointee / scalar type name */
+	int array_len;         /* 0 = scalar; >0 = [N]type on stack */
+	bool is_pointer;
+	int elem_size;         /* GetTypeSize(type_name); for *T / [N]T / T */
 } LocalInfo;
 
 typedef struct {

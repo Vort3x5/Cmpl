@@ -52,7 +52,8 @@ static void LocalsClear(Generator *g)
     g->locals.count = 0;
 }
 
-static void LocalsAdd(Generator *g, const char *name, const char *type_name, int array_len)
+static void LocalsAdd(Generator *g, const char *name, const char *type_name,
+                      int array_len, bool is_pointer, int elem_size)
 {
     for (size_t i = 0; i < g->locals.count; i++) {
         if (strcmp(g->locals.items[i].name, name) == 0) {
@@ -60,6 +61,9 @@ static void LocalsAdd(Generator *g, const char *name, const char *type_name, int
                 g->locals.items[i].type_name = type_name;
             if (array_len > 0)
                 g->locals.items[i].array_len = array_len;
+            g->locals.items[i].is_pointer = is_pointer;
+            if (elem_size > 0)
+                g->locals.items[i].elem_size = elem_size;
             return;
         }
     }
@@ -67,6 +71,8 @@ static void LocalsAdd(Generator *g, const char *name, const char *type_name, int
         .name = name,
         .type_name = type_name ? type_name : "int",
         .array_len = array_len,
+        .is_pointer = is_pointer,
+        .elem_size = elem_size > 0 ? elem_size : 8,
     };
     arena_da_append(g->arena, &g->locals, info);
 }
@@ -173,30 +179,58 @@ static size_t AlignUp(size_t off, size_t align)
     return (off + align - 1) & ~(align - 1);
 }
 
+/* Sized load/store into/from rax. addr is a full NASM/FASM memory operand body. */
+static void EmitSizedLoadAddr(Generator *g, const char *addr, int size)
+{
+    if (size == 1)
+        GenEmit(g, "    movzx rax, byte [%s]\n", addr);
+    else if (size == 2)
+        GenEmit(g, "    movzx rax, word [%s]\n", addr);
+    else if (size == 4)
+        GenEmit(g, "    mov eax, dword [%s]\n", addr);
+    else
+        GenEmit(g, "    mov rax, [%s]\n", addr);
+}
+
+static void EmitSizedStoreAddr(Generator *g, const char *addr, int size)
+{
+    if (size == 1)
+        GenEmit(g, "    mov byte [%s], al\n", addr);
+    else if (size == 2)
+        GenEmit(g, "    mov word [%s], ax\n", addr);
+    else if (size == 4)
+        GenEmit(g, "    mov dword [%s], eax\n", addr);
+    else
+        GenEmit(g, "    mov [%s], rax\n", addr);
+}
+
 static void EmitFieldLoad(Generator *g, const char *var, FieldInfo *field)
 {
-    size_t sz = field->size ? field->size : 8;
-    if (sz == 1)
-        GenEmit(g, "    movzx rax, byte [rbp - %s_offset + %zu]\n", var, field->offset);
-    else if (sz == 2)
-        GenEmit(g, "    movzx rax, word [rbp - %s_offset + %zu]\n", var, field->offset);
-    else if (sz == 4)
-        GenEmit(g, "    mov eax, dword [rbp - %s_offset + %zu]\n", var, field->offset);
-    else
-        GenEmit(g, "    mov rax, [rbp - %s_offset + %zu]\n", var, field->offset);
+    char addr[256];
+    snprintf(addr, sizeof(addr), "rbp - %s_offset + %zu", var, field->offset);
+    EmitSizedLoadAddr(g, addr, field->size ? (int)field->size : 8);
 }
 
 static void EmitFieldStore(Generator *g, const char *var, FieldInfo *field)
 {
-    size_t sz = field->size ? field->size : 8;
-    if (sz == 1)
-        GenEmit(g, "    mov byte [rbp - %s_offset + %zu], al\n", var, field->offset);
-    else if (sz == 2)
-        GenEmit(g, "    mov word [rbp - %s_offset + %zu], ax\n", var, field->offset);
-    else if (sz == 4)
-        GenEmit(g, "    mov dword [rbp - %s_offset + %zu], eax\n", var, field->offset);
-    else
-        GenEmit(g, "    mov [rbp - %s_offset + %zu], rax\n", var, field->offset);
+    char addr[256];
+    snprintf(addr, sizeof(addr), "rbp - %s_offset + %zu", var, field->offset);
+    EmitSizedStoreAddr(g, addr, field->size ? (int)field->size : 8);
+}
+
+static int LocalElemSize(LocalInfo *loc)
+{
+    if (!loc) return 8;
+    return loc->elem_size > 0 ? loc->elem_size : 8;
+}
+
+static int PointeeSizeFromOperand(Generator *g, const char *operand)
+{
+    if (!operand || TacIsNum(operand)) return 8;
+    LocalInfo *loc = LocalsFind(g, operand);
+    if (loc && loc->is_pointer)
+        return LocalElemSize(loc);
+    return 8;
 }
 
 /* Flat TAC emit: temps live in stack slots; no push/pop around calls. */
@@ -213,11 +247,13 @@ static void EmitTACInst(Generator *g, TAC_Inst *inst)
         GenEmit(g, "    lea rax, [rbp - %s_offset]\n", inst->src1);
         GenEmit(g, "    _StoreVar %s, rax\n", inst->dest);
         break;
-    case TAC_LOAD:
+    case TAC_LOAD: {
+        int psz = PointeeSizeFromOperand(g, inst->src1);
         TacLoadOperand(g, "rax", inst->src1);
-        GenEmit(g, "    mov rax, [rax]\n");
+        EmitSizedLoadAddr(g, "rax", psz);
         GenEmit(g, "    _StoreVar %s, rax\n", inst->dest);
         break;
+    }
     case TAC_FIELD: {
         TypeInfo *type = FindType(g, LocalsGetType(g, inst->src1));
         FieldInfo *field = FindField(type, inst->src2);
@@ -231,11 +267,15 @@ static void EmitTACInst(Generator *g, TAC_Inst *inst)
     }
     case TAC_INDEX: {
         LocalInfo *loc = LocalsFind(g, inst->src1);
-        int elem_size = GetTypeSize(g, loc ? loc->type_name : "int");
+        int elem_size = LocalElemSize(loc);
         TacLoadOperand(g, "rax", inst->src2);
         GenEmit(g, "    mov rcx, rax\n");
         GenEmit(g, "    imul rcx, %d\n", elem_size);
-        GenEmit(g, "    mov rax, [rbp + rcx - %s_offset]\n", inst->src1);
+        {
+            char addr[256];
+            snprintf(addr, sizeof(addr), "rbp + rcx - %s_offset", inst->src1);
+            EmitSizedLoadAddr(g, addr, elem_size);
+        }
         GenEmit(g, "    _StoreVar %s, rax\n", inst->dest);
         break;
     }
@@ -295,18 +335,24 @@ static void EmitTACInst(Generator *g, TAC_Inst *inst)
     }
     case TAC_STORE_INDEX: {
         LocalInfo *loc = LocalsFind(g, inst->dest);
-        int elem_size = GetTypeSize(g, loc ? loc->type_name : "int");
+        int elem_size = LocalElemSize(loc);
         TacLoadOperand(g, "rax", inst->src1);
         TacLoadOperand(g, "rcx", inst->src2);
         GenEmit(g, "    imul rcx, %d\n", elem_size);
-        GenEmit(g, "    mov [rbp + rcx - %s_offset], rax\n", inst->dest);
+        {
+            char addr[256];
+            snprintf(addr, sizeof(addr), "rbp + rcx - %s_offset", inst->dest);
+            EmitSizedStoreAddr(g, addr, elem_size);
+        }
         break;
     }
-    case TAC_STORE_DEREF:
+    case TAC_STORE_DEREF: {
+        int psz = PointeeSizeFromOperand(g, inst->dest);
         TacLoadOperand(g, "rax", inst->src1);
         TacLoadOperand(g, "rbx", inst->dest);
-        GenEmit(g, "    mov [rbx], rax\n");
+        EmitSizedStoreAddr(g, "rbx", psz);
         break;
+    }
     case TAC_COPY:
         TacLoadOperand(g, "rax", inst->src1);
         GenEmit(g, "    _StoreVar %s, rax\n", inst->dest);
@@ -600,8 +646,9 @@ static int VarSize(Generator *g, AST_Node *var)
             return 8;
         int elem = GetTypeSize(g, var->right->name);
         if (var->right->num > 0)
-            return elem * (int)var->right->num;
-        return elem;
+            return elem * (int)var->right->num; /* packed array */
+        /* Scalars: always an 8-byte stack slot (ABI-safe; like tsoding's b). */
+        return elem < 8 ? 8 : elem;
     }
     return 8;
 }
@@ -645,11 +692,15 @@ static void GenProc(Generator *g, AST_Node *node)
         AST_Node *var = all_vars.data[i];
         const char *ty = "int";
         int arr_len = 0;
+        bool is_ptr = false;
+        int elem_sz = 8;
         if (var->right && var->right->type == AST_TYPE && var->right->name) {
             ty = var->right->name;
             arr_len = (int)var->right->num;
+            is_ptr = (var->right->flags & AST_FLAG_POINTER) != 0;
+            elem_sz = GetTypeSize(g, ty);
         }
-        LocalsAdd(g, var->name, ty, arr_len);
+        LocalsAdd(g, var->name, ty, arr_len, is_ptr, elem_sz);
     }
     
     int locals_size = 0;
@@ -697,6 +748,7 @@ static bool LibraryNeedsLink(AST_Node *lib)
 
 static bool ProgramNeedsLink(Generator *g, AST_Node *node)
 {
+    (void)g;
     for (size_t i = 0; i < node->children.used; ++i) {
         AST_Node *decl = node->children.data[i];
         if (decl->type == AST_LIBRARY && LibraryNeedsLink(decl))
@@ -793,8 +845,7 @@ bool Generate(AST_Node *ast, const char *output_path, Arena *arena)
     
     if (need_link) {
         // Custom link with proper -rpath
-        char obj_path[4096];
-        snprintf(obj_path, sizeof(obj_path), "%s.o", exe_path);
+        const char *obj_path = nob_temp_sprintf("%s.o", exe_path);
         
         nob_log(NOB_INFO, "Assembling object with FASM...");
         Nob_Cmd fasm = {0};
