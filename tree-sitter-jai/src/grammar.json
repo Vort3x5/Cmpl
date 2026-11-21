@@ -993,10 +993,6 @@
                 {
                   "type": "STRING",
                   "value": "*"
-                },
-                {
-                  "type": "STRING",
-                  "value": "<<"
                 }
               ]
             }
@@ -1029,9 +1025,34 @@
         },
         {
           "type": "SYMBOL",
+          "name": "deref_expression"
+        },
+        {
+          "type": "SYMBOL",
           "name": "_primary_expression"
         }
       ]
+    },
+    "deref_expression": {
+      "type": "PREC",
+      "value": 10,
+      "content": {
+        "type": "SEQ",
+        "members": [
+          {
+            "type": "FIELD",
+            "name": "operand",
+            "content": {
+              "type": "SYMBOL",
+              "name": "_postfix_expression"
+            }
+          },
+          {
+            "type": "STRING",
+            "value": ".*"
+          }
+        ]
+      }
     },
     "call_expression": {
       "type": "PREC",

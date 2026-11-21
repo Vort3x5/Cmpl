@@ -1,9 +1,11 @@
 out/
 *.o
 *.asm.o
+nob
 nob.old
 examples/vulkan/libcmpl_vk.so
 examples/c_lib/libadd.so
+examples/c_lib/libfval.so
 .direnv/
 result
 result-*

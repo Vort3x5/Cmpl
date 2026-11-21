@@ -123,65 +123,9 @@ static void GenEmit(Generator *g, const char *fmt, ...)
 	va_end(args);
 }
 
-// Evaluate expression into rax using push/pop (no nested binop macros).
-static void GenExprStmt(Generator *g, AST_Node *node);
+#define TEMP_SLOTS 64
 
-static void GenBinOpStmt(Generator *g, AST_Node *node)
-{
-    const char *op = node->name;
-    
-    GenExprStmt(g, node->left);
-    GenEmit(g, "\n    push rax\n    ");
-    GenExprStmt(g, node->right);
-    GenEmit(g, "\n    mov rbx, rax\n    pop rax\n");
-    
-    if (strcmp(op, "+") == 0) {
-        GenEmit(g, "    add rax, rbx\n");
-    } else if (strcmp(op, "-") == 0) {
-        GenEmit(g, "    sub rax, rbx\n");
-    } else if (strcmp(op, "*") == 0) {
-        GenEmit(g, "    imul rax, rbx\n");
-    } else if (strcmp(op, "==") == 0) {
-        GenEmit(g, "    cmp rax, rbx\n");
-        GenEmit(g, "    mov rax, 0\n");
-        GenEmit(g, "    sete al\n");
-    } else if (strcmp(op, "!=") == 0) {
-        GenEmit(g, "    cmp rax, rbx\n");
-        GenEmit(g, "    mov rax, 0\n");
-        GenEmit(g, "    setne al\n");
-    } else if (strcmp(op, "<") == 0) {
-        GenEmit(g, "    cmp rax, rbx\n");
-        GenEmit(g, "    mov rax, 0\n");
-        GenEmit(g, "    setl al\n");
-    } else if (strcmp(op, ">") == 0) {
-        GenEmit(g, "    cmp rax, rbx\n");
-        GenEmit(g, "    mov rax, 0\n");
-        GenEmit(g, "    setg al\n");
-    } else {
-        nob_log(NOB_ERROR, "Unsupported binary operator: %s", op);
-    }
-}
-
-static void GenCallArgs(Generator *g, AST_Node *call)
-{
-    size_t nargs = call->children.used;
-    if (nargs > 6) {
-        nob_log(NOB_ERROR, "More than 6 arguments not supported");
-        nargs = 6;
-    }
-    
-    for (size_t i = 0; i < nargs; i++) {
-        GenEmit(g, "    ");
-        GenExprStmt(g, call->children.data[i]);
-        GenEmit(g, "\n    push rax\n");
-    }
-    
-    for (size_t i = nargs; i > 0; i--) {
-        GenEmit(g, "    pop %s\n", arg_regs[i - 1]);
-    }
-}
-
-static const char* ForeignSymbol(Generator *g, const char *jai_name)
+static const char *ForeignSymbol(Generator *g, const char *jai_name)
 {
     for (size_t i = 0; i < g->foreigns.count; i++) {
         if (strcmp(g->foreigns.items[i].jai_name, jai_name) == 0)
@@ -190,188 +134,175 @@ static const char* ForeignSymbol(Generator *g, const char *jai_name)
     return NULL;
 }
 
-static void GenCall(Generator *g, AST_Node *call)
+static bool TacIsNum(const char *s)
 {
-    if (!call->left || call->left->type != AST_ID) {
-        nob_log(NOB_ERROR, "Call target must be an identifier");
-        return;
-    }
-    GenCallArgs(g, call);
-    const char *sym = ForeignSymbol(g, call->left->name);
-    if (sym)
-        GenEmit(g, "    call %s\n", sym);
+    if (!s || !*s) return false;
+    if (*s == '-') s++;
+    if (!*s) return false;
+    for (; *s; s++)
+        if (*s < '0' || *s > '9') return false;
+    return true;
+}
+
+static void TacLoadOperand(Generator *g, const char *reg, const char *operand)
+{
+    if (TacIsNum(operand))
+        GenEmit(g, "    mov %s, %s\n", reg, operand);
     else
-        GenEmit(g, "    call func_%s\n", call->left->name);
+        GenEmit(g, "    _LoadVar %s, %s\n", reg, operand);
 }
 
-static void GenAddrOf(Generator *g, AST_Node *node)
+/* Flat TAC emit: temps live in stack slots; no push/pop around calls. */
+static void EmitTACInst(Generator *g, TAC_Inst *inst)
 {
-    // *id  → lea rax, [rbp - id_offset]
-    if (!node->right || node->right->type != AST_ID) {
-        nob_log(NOB_ERROR, "Only *local_var address-of supported");
-        return;
+    switch (inst->type) {
+    case TAC_PARAM: {
+        int idx = inst->op ? atoi(inst->op) : 0;
+        if (idx < 0 || idx > 5) idx = 0;
+        TacLoadOperand(g, arg_regs[idx], inst->src1);
+        break;
     }
-    GenEmit(g, "lea rax, [rbp - %s_offset]", node->right->name);
+    case TAC_BINOP: {
+        const char *op = inst->op ? inst->op : "+";
+        if (strcmp(op, "lea") == 0) {
+            GenEmit(g, "    lea rax, [rbp - %s_offset]\n", inst->src1);
+            GenEmit(g, "    _StoreVar %s, rax\n", inst->dest);
+        } else if (strcmp(op, "load") == 0) {
+            TacLoadOperand(g, "rax", inst->src1);
+            GenEmit(g, "    mov rax, [rax]\n");
+            GenEmit(g, "    _StoreVar %s, rax\n", inst->dest);
+        } else if (strcmp(op, "field") == 0) {
+            const char *var = inst->src1;
+            const char *fname = inst->src2;
+            TypeInfo *type = FindType(g, LocalsGetType(g, var));
+            FieldInfo *field = FindField(type, fname);
+            if (!field) {
+                nob_log(NOB_ERROR, "Unknown field %s.%s", var, fname);
+                break;
+            }
+            GenEmit(g, "    _LoadField rax, %s, %zu\n", var, field->offset);
+            GenEmit(g, "    _StoreVar %s, rax\n", inst->dest);
+        } else if (strcmp(op, "index") == 0) {
+            LocalInfo *loc = LocalsFind(g, inst->src1);
+            int elem_size = GetTypeSize(g, loc ? loc->type_name : "int");
+            TacLoadOperand(g, "rax", inst->src2);
+            GenEmit(g, "    mov rcx, rax\n");
+            GenEmit(g, "    imul rcx, %d\n", elem_size);
+            GenEmit(g, "    mov rax, [rbp + rcx - %s_offset]\n", inst->src1);
+            GenEmit(g, "    _StoreVar %s, rax\n", inst->dest);
+        } else if (strcmp(op, "neg") == 0) {
+            TacLoadOperand(g, "rax", inst->src2);
+            GenEmit(g, "    neg rax\n");
+            GenEmit(g, "    _StoreVar %s, rax\n", inst->dest);
+        } else if (strcmp(op, "!") == 0) {
+            TacLoadOperand(g, "rax", inst->src2);
+            GenEmit(g, "    test rax, rax\n");
+            GenEmit(g, "    mov rax, 0\n");
+            GenEmit(g, "    sete al\n");
+            GenEmit(g, "    _StoreVar %s, rax\n", inst->dest);
+        } else {
+            TacLoadOperand(g, "rax", inst->src1);
+            TacLoadOperand(g, "rbx", inst->src2);
+            if (strcmp(op, "+") == 0) GenEmit(g, "    add rax, rbx\n");
+            else if (strcmp(op, "-") == 0) GenEmit(g, "    sub rax, rbx\n");
+            else if (strcmp(op, "*") == 0) GenEmit(g, "    imul rax, rbx\n");
+            else if (strcmp(op, "==") == 0) {
+                GenEmit(g, "    cmp rax, rbx\n    mov rax, 0\n    sete al\n");
+            } else if (strcmp(op, "!=") == 0) {
+                GenEmit(g, "    cmp rax, rbx\n    mov rax, 0\n    setne al\n");
+            } else if (strcmp(op, "<") == 0) {
+                GenEmit(g, "    cmp rax, rbx\n    mov rax, 0\n    setl al\n");
+            } else if (strcmp(op, ">") == 0) {
+                GenEmit(g, "    cmp rax, rbx\n    mov rax, 0\n    setg al\n");
+            } else if (strcmp(op, "<=") == 0) {
+                GenEmit(g, "    cmp rax, rbx\n    mov rax, 0\n    setle al\n");
+            } else if (strcmp(op, ">=") == 0) {
+                GenEmit(g, "    cmp rax, rbx\n    mov rax, 0\n    setge al\n");
+            } else {
+                nob_log(NOB_ERROR, "Unsupported TAC binop: %s", op);
+            }
+            GenEmit(g, "    _StoreVar %s, rax\n", inst->dest);
+        }
+        break;
+    }
+    case TAC_COPY: {
+        if (inst->op && strcmp(inst->op, "store_field") == 0) {
+            TacLoadOperand(g, "rax", inst->src1);
+            TypeInfo *type = FindType(g, LocalsGetType(g, inst->dest));
+            FieldInfo *field = FindField(type, inst->src2);
+            if (!field) {
+                nob_log(NOB_ERROR, "Unknown field store %s.%s", inst->dest, inst->src2);
+                break;
+            }
+            GenEmit(g, "    _StoreField %s, %zu, rax\n", inst->dest, field->offset);
+        } else if (inst->op && strcmp(inst->op, "store_index") == 0) {
+            LocalInfo *loc = LocalsFind(g, inst->dest);
+            int elem_size = GetTypeSize(g, loc ? loc->type_name : "int");
+            TacLoadOperand(g, "rax", inst->src1);
+            TacLoadOperand(g, "rcx", inst->src2);
+            GenEmit(g, "    imul rcx, %d\n", elem_size);
+            GenEmit(g, "    mov [rbp + rcx - %s_offset], rax\n", inst->dest);
+        } else if (inst->op && strcmp(inst->op, "store_deref") == 0) {
+            TacLoadOperand(g, "rax", inst->src1);
+            TacLoadOperand(g, "rbx", inst->dest);
+            GenEmit(g, "    mov [rbx], rax\n");
+        } else {
+            TacLoadOperand(g, "rax", inst->src1);
+            GenEmit(g, "    _StoreVar %s, rax\n", inst->dest);
+        }
+        break;
+    }
+    case TAC_CALL: {
+        const char *sym = ForeignSymbol(g, inst->src1);
+        if (sym)
+            GenEmit(g, "    call %s\n", sym);
+        else
+            GenEmit(g, "    call func_%s\n", inst->src1);
+        if (inst->dest)
+            GenEmit(g, "    _StoreVar %s, rax\n", inst->dest);
+        break;
+    }
+    case TAC_RETURN: {
+        TacLoadOperand(g, "rax", inst->src1 ? inst->src1 : "0");
+        GenEmit(g, "    _ReturnRax\n");
+        break;
+    }
+    default:
+        break;
+    }
 }
 
-static void GenDerefLoad(Generator *g, AST_Node *node)
+static void EmitTACList(Generator *g, TAC_Inst *head)
 {
-    GenExprStmt(g, node->right);
-    GenEmit(g, "\n    mov rax, [rax]");
+    for (TAC_Inst *inst = head; inst; inst = inst->next)
+        EmitTACInst(g, inst);
 }
 
-static void GenDerefStore(Generator *g, AST_Node *deref_node)
-{
-    // value in rax; compute address, store
-    GenEmit(g, "    push rax\n");
-    GenEmit(g, "    ");
-    GenExprStmt(g, deref_node->right);
-    GenEmit(g, "\n    mov rbx, rax\n");
-    GenEmit(g, "    pop rax\n");
-    GenEmit(g, "    mov [rbx], rax\n");
-}
-
-static void GenFieldLoad(Generator *g, AST_Node *access)
-{
-    if (!access->left || access->left->type != AST_ID) {
-        nob_log(NOB_ERROR, "Only simple var.field access supported");
-        return;
-    }
-    const char *var = access->left->name;
-    const char *type_name = LocalsGetType(g, var);
-    TypeInfo *type = FindType(g, type_name);
-    FieldInfo *field = FindField(type, access->name);
-    if (!field) {
-        nob_log(NOB_ERROR, "Unknown field %s.%s (type %s)", var, access->name, type_name);
-        return;
-    }
-    GenEmit(g, "_LoadField rax, %s, %zu", var, field->offset);
-}
-
-static void GenFieldStore(Generator *g, AST_Node *access)
-{
-    if (!access->left || access->left->type != AST_ID) {
-        nob_log(NOB_ERROR, "Only simple var.field store supported");
-        return;
-    }
-    const char *var = access->left->name;
-    const char *type_name = LocalsGetType(g, var);
-    TypeInfo *type = FindType(g, type_name);
-    FieldInfo *field = FindField(type, access->name);
-    if (!field) {
-        nob_log(NOB_ERROR, "Unknown field %s.%s (type %s)", var, access->name, type_name);
-        return;
-    }
-    GenEmit(g, "    _StoreField %s, %zu, rax\n", var, field->offset);
-}
-
-static void GenIndexLoad(Generator *g, AST_Node *index_node)
-{
-    if (!index_node->left || index_node->left->type != AST_ID) {
-        nob_log(NOB_ERROR, "Only simple arr[i] supported");
-        return;
-    }
-    const char *var = index_node->left->name;
-    LocalInfo *loc = LocalsFind(g, var);
-    int elem_size = GetTypeSize(g, loc ? loc->type_name : "int");
-    
-    GenExprStmt(g, index_node->right);
-    GenEmit(g, "\n    mov rcx, rax\n");
-    GenEmit(g, "    imul rcx, %d\n", elem_size);
-    GenEmit(g, "    mov rax, [rbp + rcx - %s_offset]", var);
-}
-
-static void GenIndexStore(Generator *g, AST_Node *index_node)
-{
-    // value in rax; preserve it while computing address
-    if (!index_node->left || index_node->left->type != AST_ID) {
-        nob_log(NOB_ERROR, "Only simple arr[i] store supported");
-        return;
-    }
-    const char *var = index_node->left->name;
-    LocalInfo *loc = LocalsFind(g, var);
-    int elem_size = GetTypeSize(g, loc ? loc->type_name : "int");
-    
-    GenEmit(g, "    push rax\n");
-    GenEmit(g, "    ");
-    GenExprStmt(g, index_node->right);
-    GenEmit(g, "\n    mov rcx, rax\n");
-    GenEmit(g, "    imul rcx, %d\n", elem_size);
-    GenEmit(g, "    pop rax\n");
-    GenEmit(g, "    mov [rbp + rcx - %s_offset], rax\n", var);
-}
-
+/* Evaluate expression via TAC into rax (temps in stack slots). */
 static void GenExprStmt(Generator *g, AST_Node *node)
 {
     if (!node) return;
-    
-    switch (node->type) {
-        case AST_NUM:
-            GenEmit(g, "mov rax, %lld", (long long)node->num);
-            break;
-        case AST_ID:
-            GenEmit(g, "_LoadVar rax, %s", node->name);
-            break;
-        case AST_FIELD_ACCESS:
-            GenFieldLoad(g, node);
-            break;
-        case AST_INDEX:
-            GenIndexLoad(g, node);
-            break;
-        case AST_ADDR_OF:
-            GenAddrOf(g, node);
-            break;
-        case AST_DEREF:
-            GenDerefLoad(g, node);
-            break;
-        case AST_BIN_OP:
-            GenBinOpStmt(g, node);
-            break;
-        case AST_CALL:
-            GenCall(g, node);
-            break;
-        default:
-            nob_log(NOB_ERROR, "Unsupported expression type: %d", node->type);
-            break;
-    }
+    TAC_Builder tb;
+    TACInit(&tb, g->arena);
+    char *result = ExprToTAC(&tb, node);
+    EmitTACList(g, tb.head);
+    if (result)
+        TacLoadOperand(g, "rax", result);
+    else
+        GenEmit(g, "    mov rax, 0\n");
 }
 
-static void GenAssign(Generator *g, AST_Node *node) 
+static void GenCall(Generator *g, AST_Node *call)
 {
-    if (node->left && node->left->type == AST_FIELD_ACCESS) {
-        GenEmit(g, "    ");
-        GenExprStmt(g, node->right);
-        GenEmit(g, "\n");
-        GenFieldStore(g, node->left);
-        return;
-    }
-    
-    if (node->left && node->left->type == AST_INDEX) {
-        GenEmit(g, "    ");
-        GenExprStmt(g, node->right);
-        GenEmit(g, "\n");
-        GenIndexStore(g, node->left);
-        return;
-    }
-    
-    if (node->left && node->left->type == AST_DEREF) {
-        GenEmit(g, "    ");
-        GenExprStmt(g, node->right);
-        GenEmit(g, "\n");
-        GenDerefStore(g, node->left);
-        return;
-    }
-    
-    if (node->right && node->right->type == AST_CALL) 
-	{
-        GenCall(g, node->right);
-        GenEmit(g, "    _StoreVar %s, rax\n", node->name);
-        return;
-    }
-    
-    GenEmit(g, "    ");
-    GenExprStmt(g, node->right);
-    GenEmit(g, "\n    _StoreVar %s, rax\n", node->name);
+    GenExprStmt(g, call);
+}
+
+static void GenAssign(Generator *g, AST_Node *node)
+{
+    TAC_Builder tb;
+    TACInit(&tb, g->arena);
+    StmtToTAC(&tb, node);
+    EmitTACList(g, tb.head);
 }
 
 static void GenEmitDefers(Generator *g, size_t from)
@@ -662,6 +593,8 @@ static void GenProc(Generator *g, AST_Node *node)
     int locals_size = 0;
     for (size_t i = 0; i < all_vars.used; i++)
         locals_size += VarSize(g, all_vars.data[i]);
+    /* Reserve flat temp slots for TAC (replaces push/pop in expressions). */
+    locals_size += TEMP_SLOTS * 8;
     
     if (locals_size % 16 != 0)
         locals_size += 16 - (locals_size % 16);
@@ -672,6 +605,8 @@ static void GenProc(Generator *g, AST_Node *node)
         AST_Node *var = all_vars.data[i];
         GenEmit(g, "    _DeclareVar %s, %d\n", var->name, VarSize(g, var));
     }
+    for (int t = 0; t < TEMP_SLOTS; t++)
+        GenEmit(g, "    _DeclareVar _t%d, 8\n", t);
     
     size_t nparams = node->children.used;
     if (nparams > 6) nparams = 6;
@@ -814,13 +749,23 @@ bool Generate(AST_Node *ast, const char *output_path, Arena *arena)
             if (lib->flags & AST_FLAG_SYSTEM_LIB) {
                 const char *name = path;
                 if (strncmp(path, "lib", 3) == 0) name = path + 3;
-                nob_cmd_append(&link, nob_temp_sprintf("-l%s", name));
+                /* strip trailing .so if present */
+                size_t nlen = strlen(name);
+                if (nlen > 3 && strcmp(name + nlen - 3, ".so") == 0)
+                    nob_cmd_append(&link, nob_temp_sprintf("-l%.*s", (int)(nlen - 3), name));
+                else
+                    nob_cmd_append(&link, nob_temp_sprintf("-l%s", name));
             } else {
-                nob_cmd_append(&link, path);
-                const char *slash = strrchr(path, '/');
-                if (slash && slash != path) {
-                    size_t n = (size_t)(slash - path);
-                    nob_cmd_append(&link, nob_temp_sprintf("-Wl,-rpath,%.*s", (int)n, path));
+                /* #library "path/libfoo" — append .so at link time */
+                const char *so_path = path;
+                size_t plen = strlen(path);
+                if (plen < 3 || strcmp(path + plen - 3, ".so") != 0)
+                    so_path = nob_temp_sprintf("%s.so", path);
+                nob_cmd_append(&link, so_path);
+                const char *slash = strrchr(so_path, '/');
+                if (slash && slash != so_path) {
+                    size_t n = (size_t)(slash - so_path);
+                    nob_cmd_append(&link, nob_temp_sprintf("-Wl,-rpath,%.*s", (int)n, so_path));
                 }
             }
         }

@@ -204,6 +204,13 @@ static AST_Node *ParsePrimary(Parser *parser)
 				ParserConsume(parser, TOKEN_R_BRACKET, "Expected ']' after array index");
 				expr = index_node;
 			} 
+			else if (ParserMatch(parser, TOKEN_DEREF))
+			{
+				/* postfix .* — The_Way_to_Jai §10 */
+				AST_Node *deref = ASTNodeCreate(parser, AST_DEREF);
+				deref->right = expr;
+				expr = deref;
+			}
 			else if (ParserMatch(parser, TOKEN_DOT)) 
 			{
 				if (!ParserMatch(parser, TOKEN_ID)) 
@@ -267,14 +274,8 @@ static AST_Node *ParseType(Parser *parser)
 
 static AST_Node *ParseUnary(Parser *parser) 
 {
-    // Jai: <<expr  dereference
-    if (ParserMatch(parser, TOKEN_DEREF)) {
-        AST_Node *node = ASTNodeCreate(parser, AST_DEREF);
-        node->right = ParseUnary(parser);
-        return node;
-    }
-    
     // Jai: *expr  address-of (unary *); binary * handled in ParseFactor
+    // Deref is postfix .* (handled in ParsePrimary)
     if (ParserMatch(parser, TOKEN_MUL)) {
         AST_Node *node = ASTNodeCreate(parser, AST_ADDR_OF);
         node->right = ParseUnary(parser);
@@ -395,7 +396,7 @@ static AST_Node *ParseExpressionStatement(Parser *parser)
 {
     AST_Node *expr = ParseExpression(parser);
 
-    // Jai lvalue assign: <<p = 1;  arr[i] = 1;  (also covers plain expr)
+    // Jai lvalue assign: p.* = 1;  arr[i] = 1;  (also covers plain expr)
     if (ParserMatch(parser, TOKEN_EQ_ASSIGN)) {
         AST_Node *node = ASTNodeCreate(parser, AST_ASSIGNMENT);
         node->left = expr;
@@ -624,10 +625,7 @@ static AST_Node *ParseProcedure(Parser *parser)
     // Jai:  name :: (...) -> T #foreign libc;
     //       name :: (...) -> T #foreign libc "CSymbol";
     if (ParserMatch(parser, TOKEN_HASH)) {
-        // 'foreign' may be TOKEN_FOREIGN_KW (keyword) or TOKEN_ID
-        bool got_foreign = ParserMatch(parser, TOKEN_FOREIGN_KW)
-            || (ParserMatch(parser, TOKEN_ID) && strcmp(parser->prev.lexeme, "foreign") == 0);
-        if (!got_foreign) {
+        if (!(ParserMatch(parser, TOKEN_ID) && strcmp(parser->prev.lexeme, "foreign") == 0)) {
             ParserError(parser, "Expected 'foreign' after '#'");
             return proc;
         }
@@ -644,15 +642,6 @@ static AST_Node *ParseProcedure(Parser *parser)
             proc->body = NULL;
         }
         ParserMatch(parser, TOKEN_SEMICOLON);
-        return proc;
-    }
-    
-    // Legacy keyword (not real Jai) — still accepted temporarily
-    if (ParserMatch(parser, TOKEN_FOREIGN_KW)) {
-        proc->flags |= AST_FLAG_FOREIGN;
-        proc->str = arena_strdup(parser->arena, "cmpl_rt");
-        ParserMatch(parser, TOKEN_SEMICOLON);
-        proc->body = NULL;
         return proc;
     }
     

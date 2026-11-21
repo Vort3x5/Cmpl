@@ -38,8 +38,7 @@ typedef enum {
     TOKEN_DEFER,
     TOKEN_STRUCT,
     TOKEN_HASH,
-    TOKEN_DEREF,   // <<  (Jai pointer dereference)
-    TOKEN_FOREIGN_KW, // legacy; prefer #foreign
+    TOKEN_DEREF,   // .*  (Jai postfix pointer dereference, The_Way_to_Jai §10)
 	TOKEN_DOT,
 	TOKEN_PLUS,
 	TOKEN_MINUS,
@@ -93,7 +92,7 @@ typedef enum {
     AST_TYPE,
     AST_LIBRARY,   // name :: #library / #system_library "path"
     AST_ADDR_OF,   // *expr
-    AST_DEREF,     // << expr
+    AST_DEREF,     // expr.*
 } AST_Type;
 
 typedef struct AST_Node AST_Node;
@@ -247,7 +246,6 @@ typedef struct {
 		[TOKEN_STRUCT] = "STRUCT",
 		[TOKEN_HASH] = "HASH",
 		[TOKEN_DEREF] = "DEREF",
-		[TOKEN_FOREIGN_KW] = "FOREIGN_KW",
         [TOKEN_COMMA] = "COMMA",
         [TOKEN_DOT] = "DOT",
         [TOKEN_PLUS] = "PLUS",
@@ -305,10 +303,6 @@ typedef struct {
     static void GenStmt(Generator *g, AST_Node *node);
 #endif
 
-#ifdef TAC_DEF
-	static void StmtToTAC(TAC_Builder *tb, AST_Node *node);
-#endif
-
 Lexer* LexerCreate(const char* src, Arena* arena);
 Token LexerNextToken(Lexer* lexer);
 Token LexerPeekToken(Lexer* lexer);
@@ -327,5 +321,6 @@ void ASTPrintProgram(AST_Node* program);
 int TACGetMaxTemp(TAC_Inst *tac);
 void TACInit(TAC_Builder *tb, Arena *arena);
 char* ExprToTAC(TAC_Builder *tb, AST_Node *node);
+void StmtToTAC(TAC_Builder *tb, AST_Node *node);
 TAC_Inst* FuncBodyToTAC(AST_Node *body, Arena *arena);
 bool Generate(AST_Node *ast, const char *output_path, Arena *arena);

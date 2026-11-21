@@ -1,7 +1,7 @@
 /*
- * Headless Vulkan red triangle for Cmpl.
- * Renders one frame into a VkImage, reads center pixel.
- * Returns 0 if roughly red, else error code.
+ * Headless Vulkan red triangle for Cmpl (legacy helper).
+ * New Vulkan work: call libvulkan from .jai via #foreign
+ * (see examples/BasicJai/vulkan_ffi.jai) — do not grow this file.
  *
  * Build: ./nob all   (or ./nob vk)
  */

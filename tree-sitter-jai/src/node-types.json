@@ -16,6 +16,10 @@
           "named": true
         },
         {
+          "type": "deref_expression",
+          "named": true
+        },
+        {
           "type": "field_access",
           "named": true
         },
@@ -89,6 +93,10 @@
             "named": true
           },
           {
+            "type": "deref_expression",
+            "named": true
+          },
+          {
             "type": "field_access",
             "named": true
           },
@@ -128,6 +136,10 @@
           },
           {
             "type": "call_expression",
+            "named": true
+          },
+          {
+            "type": "deref_expression",
             "named": true
           },
           {
@@ -176,6 +188,10 @@
           },
           {
             "type": "call_expression",
+            "named": true
+          },
+          {
+            "type": "deref_expression",
             "named": true
           },
           {
@@ -271,6 +287,10 @@
             "named": true
           },
           {
+            "type": "deref_expression",
+            "named": true
+          },
+          {
             "type": "field_access",
             "named": true
           },
@@ -362,6 +382,10 @@
             "named": true
           },
           {
+            "type": "deref_expression",
+            "named": true
+          },
+          {
             "type": "field_access",
             "named": true
           },
@@ -448,6 +472,50 @@
     }
   },
   {
+    "type": "deref_expression",
+    "named": true,
+    "fields": {
+      "operand": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "call_expression",
+            "named": true
+          },
+          {
+            "type": "deref_expression",
+            "named": true
+          },
+          {
+            "type": "field_access",
+            "named": true
+          },
+          {
+            "type": "identifier",
+            "named": true
+          },
+          {
+            "type": "index_expression",
+            "named": true
+          },
+          {
+            "type": "number",
+            "named": true
+          },
+          {
+            "type": "parenthesized_expression",
+            "named": true
+          },
+          {
+            "type": "string",
+            "named": true
+          }
+        ]
+      }
+    }
+  },
+  {
     "type": "expression_statement",
     "named": true,
     "fields": {},
@@ -461,6 +529,10 @@
         },
         {
           "type": "call_expression",
+          "named": true
+        },
+        {
+          "type": "deref_expression",
           "named": true
         },
         {
@@ -514,6 +586,10 @@
         "types": [
           {
             "type": "call_expression",
+            "named": true
+          },
+          {
+            "type": "deref_expression",
             "named": true
           },
           {
@@ -603,6 +679,10 @@
             "named": true
           },
           {
+            "type": "deref_expression",
+            "named": true
+          },
+          {
             "type": "field_access",
             "named": true
           },
@@ -662,6 +742,10 @@
           },
           {
             "type": "call_expression",
+            "named": true
+          },
+          {
+            "type": "deref_expression",
             "named": true
           },
           {
@@ -781,6 +865,10 @@
             "named": true
           },
           {
+            "type": "deref_expression",
+            "named": true
+          },
+          {
             "type": "field_access",
             "named": true
           },
@@ -867,6 +955,10 @@
             "named": true
           },
           {
+            "type": "deref_expression",
+            "named": true
+          },
+          {
             "type": "field_access",
             "named": true
           },
@@ -902,6 +994,10 @@
           },
           {
             "type": "call_expression",
+            "named": true
+          },
+          {
+            "type": "deref_expression",
             "named": true
           },
           {
@@ -1034,6 +1130,10 @@
           "named": true
         },
         {
+          "type": "deref_expression",
+          "named": true
+        },
+        {
           "type": "field_access",
           "named": true
         },
@@ -1144,6 +1244,10 @@
         },
         {
           "type": "call_expression",
+          "named": true
+        },
+        {
+          "type": "deref_expression",
           "named": true
         },
         {
@@ -1354,6 +1458,10 @@
             "named": true
           },
           {
+            "type": "deref_expression",
+            "named": true
+          },
+          {
             "type": "field_access",
             "named": true
           },
@@ -1397,10 +1505,6 @@
           },
           {
             "type": "-",
-            "named": false
-          },
-          {
-            "type": "<<",
             "named": false
           }
         ]
@@ -1463,6 +1567,10 @@
           },
           {
             "type": "call_expression",
+            "named": true
+          },
+          {
+            "type": "deref_expression",
             "named": true
           },
           {
@@ -1546,6 +1654,10 @@
     "named": false
   },
   {
+    "type": ".*",
+    "named": false
+  },
+  {
     "type": "..",
     "named": false
   },
@@ -1571,10 +1683,6 @@
   },
   {
     "type": "<",
-    "named": false
-  },
-  {
-    "type": "<<",
     "named": false
   },
   {

@@ -1,31 +1,35 @@
-# Cmpl Vulkan (headless red triangle)
+# Cmpl Vulkan
 
-Game milestone 1: prove Vulkan works end-to-end from a `.jai` entry point.
+**Preferred path:** call `libvulkan` from Jai (`examples/BasicJai/vulkan_ffi.jai`) via `#system_library` / `#foreign`. Do not add new `cmpl_vk_*` monoliths.
+
+Legacy helpers below still power the older triangle/sprite/player demos until those move to thin FFI.
 
 ## Layout
 
 | Path | Role |
 |------|------|
-| `include/vulkan/` | Vendored Vulkan-Headers (v1.2.198) |
+| `include/` | Vendored Vulkan/XCB headers — **fallback only** when `pkg-config vulkan` is missing; nix-shell uses `vulkan-headers` |
 | `shaders/tri.*.spv` | Minimal red-triangle SPIR-V |
-| `cmpl_vk.c` | Headless renderer (`cmpl_vk_triangle`) |
-| `cmpl_vk_present.c` | Shared swapchain + red triangle |
-| `cmpl_vk_wl.c` | Wayland host |
-| `cmpl_vk_xcb.c` | X11/XCB host (bspwm, i3, …) |
+| `cmpl_vk*.c` | Legacy C helpers (shrink over time) |
 | `wayland/` | Vendored xdg-shell protocol |
 | `libcmpl_vk.so` | Built by `./nob all` / `./nob vk` |
-| `../BasicJai/vulkan_triangle.jai` | Headless Jai driver |
-| `../BasicJai/vulkan_window.jai` | On-screen triangle |
-| `../BasicJai/vulkan_sprite.jai` | Textured sprite (milestone 2) |
-| `shaders/sprite.*.spv` | Textured-quad shaders |
+| `../BasicJai/vulkan_ffi.jai` | Direct `vkCreateInstance` from Jai |
+| `../BasicJai/vulkan_*.jai` | Older demos via `libcmpl_vk` |
 
 ## Build & test
 
-On NixOS / nix-on-other-distros, enter the project shell first (provides `vulkan-loader` for the linker):
+On NixOS / nix-on-other-distros, enter the project shell first (`pkg-config` + `vulkan-headers` / loader):
 
 ```bash
 nix-shell          # or: nix develop
 ./nob all
+./out/cmpl examples/BasicJai/vulkan_ffi.jai
+./out/out; echo $?   # 0
+```
+
+Legacy triangle:
+
+```bash
 ./out/cmpl examples/BasicJai/vulkan_triangle.jai
 ./out/out; echo $?
 ```

@@ -2,7 +2,7 @@
 library and foreign
 ==================
 
-vk :: #library "examples/vulkan/libcmpl_vk.so";
+vk :: #library "examples/vulkan/libcmpl_vk";
 foo :: (a: int) -> int #foreign vk;
 main :: () -> int {
     return foo(1);
@@ -35,11 +35,11 @@ main :: () -> int {
     b: *int;
     arr: [4]int;
     b = *a;
-    << b = 1;
+    b.* = 1;
     {
         defer a = a + 1;
     }
-    return << b;
+    return b.*;
 }
 
 ---
@@ -60,14 +60,14 @@ main :: () -> int {
         left: (identifier)
         right: (unary_expression operand: (identifier)))
       (assignment_statement
-        left: (unary_expression operand: (identifier))
+        left: (deref_expression operand: (identifier))
         right: (number))
       (block
         (defer_statement
           body: (assignment_statement
             left: (identifier)
             right: (binary_expression left: (identifier) right: (number)))))
-      (return_statement (unary_expression operand: (identifier))))))
+      (return_statement (deref_expression operand: (identifier))))))
 
 ==================
 call comparison in if

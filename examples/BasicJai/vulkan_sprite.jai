@@ -7,7 +7,7 @@
 //
 // Window shows a green cloak "hero" sprite on dark clear. Exit 0.
 
-vk :: #library "examples/vulkan/libcmpl_vk.so";
+vk :: #library "examples/vulkan/libcmpl_vk";
 
 cmpl_vk_sprite :: () -> int #foreign vk;
 

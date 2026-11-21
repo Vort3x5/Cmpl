@@ -1,16 +1,40 @@
 #define NOB_IMPLEMENTATION
 #include "include/nob.h"
 
-/* Caller owns the returned string (nob_temp lifetime). */
-static const char *FindSharedLib(const char *name)
+#include <stdio.h>
+#include <string.h>
+
+/* Append space-separated flags from `pkg-config --cflags|--libs <pkg>` if available.
+ * On Nix, NIX_CFLAGS_COMPILE / NIX_LDFLAGS already provide search paths for -l… */
+static void AppendPkgConfig(Nob_Cmd *cmd, const char *pkg, bool cflags)
 {
-    static const char *dirs[] = { "/usr/lib", "/usr/lib64", "/lib", "/lib64" };
-    for (size_t i = 0; i < NOB_ARRAY_LEN(dirs); i++) {
-        const char *path = nob_temp_sprintf("%s/%s", dirs[i], name);
-        if (nob_file_exists(path) > 0)
-            return path;
+    char cmdline[256];
+    snprintf(cmdline, sizeof(cmdline), "pkg-config --%s %s",
+             cflags ? "cflags" : "libs", pkg);
+    FILE *fp = popen(cmdline, "r");
+    if (!fp)
+        return;
+    char buf[1024];
+    if (!fgets(buf, sizeof(buf), fp)) {
+        pclose(fp);
+        return;
     }
-    return NULL;
+    int st = pclose(fp);
+    if (st != 0)
+        return;
+    /* strip trailing newline */
+    size_t n = strlen(buf);
+    while (n > 0 && (buf[n - 1] == '\n' || buf[n - 1] == '\r'))
+        buf[--n] = '\0';
+    char *p = buf;
+    while (*p) {
+        while (*p == ' ' || *p == '\t') p++;
+        if (!*p) break;
+        char *start = p;
+        while (*p && *p != ' ' && *p != '\t') p++;
+        if (*p) *p++ = '\0';
+        nob_cmd_append(cmd, nob_temp_sprintf("%s", start));
+    }
 }
 
 bool BuildAll(void)
@@ -32,7 +56,8 @@ bool BuildAll(void)
     return nob_cmd_run(&cmd);
 }
 
-/* Headless + Wayland Vulkan helpers for BasicJai examples. */
+/* Headless + Wayland/XCB Vulkan helpers for BasicJai examples.
+ * Headers/libs: pkg-config (nix-shell / distro), not FHS /usr/lib scans. */
 bool BuildVulkanSo(void)
 {
     const char *out = "examples/vulkan/libcmpl_vk.so";
@@ -56,36 +81,24 @@ bool BuildVulkanSo(void)
     Nob_Cmd cmd = {0};
     nob_cc(&cmd);
     nob_cmd_append(&cmd, "-shared", "-fPIC", "-O2",
-                   "-I", "examples/vulkan/include",
                    "-I", "examples/vulkan",
                    "-o", out,
                    inputs[0], inputs[1], inputs[2], inputs[3], inputs[4], inputs[5]);
 
-    const char *vk = FindSharedLib("libvulkan.so");
-    if (vk) {
-        nob_log(NOB_INFO, "Linking Vulkan via %s", vk);
-        nob_cmd_append(&cmd, vk);
+    /* Prefer system/nix vulkan-headers via pkg-config; fall back to vendored copy. */
+    int have_pc = (system("pkg-config --exists vulkan 2>/dev/null") == 0);
+    if (have_pc) {
+        nob_log(NOB_INFO, "Vulkan via pkg-config (nix/system headers)");
+        AppendPkgConfig(&cmd, "vulkan", true);
+        AppendPkgConfig(&cmd, "vulkan", false);
+        AppendPkgConfig(&cmd, "wayland-client", true);
+        AppendPkgConfig(&cmd, "wayland-client", false);
+        AppendPkgConfig(&cmd, "xcb", true);
+        AppendPkgConfig(&cmd, "xcb", false);
     } else {
-        nob_log(NOB_INFO, "libvulkan.so not in /usr|/lib — trying -lvulkan (use nix-shell)");
-        nob_cmd_append(&cmd, "-lvulkan");
-    }
-
-    const char *wl = FindSharedLib("libwayland-client.so");
-    if (wl) {
-        nob_log(NOB_INFO, "Linking Wayland via %s", wl);
-        nob_cmd_append(&cmd, wl);
-    } else {
-        nob_log(NOB_INFO, "libwayland-client.so not found — trying -lwayland-client");
-        nob_cmd_append(&cmd, "-lwayland-client");
-    }
-
-    const char *xcb = FindSharedLib("libxcb.so");
-    if (xcb) {
-        nob_log(NOB_INFO, "Linking XCB via %s", xcb);
-        nob_cmd_append(&cmd, xcb);
-    } else {
-        nob_log(NOB_INFO, "libxcb.so not found — trying -lxcb");
-        nob_cmd_append(&cmd, "-lxcb");
+        nob_log(NOB_INFO, "pkg-config vulkan missing — vendored headers + -l flags (use nix-shell)");
+        nob_cmd_append(&cmd, "-I", "examples/vulkan/include");
+        nob_cmd_append(&cmd, "-lvulkan", "-lwayland-client", "-lxcb");
     }
 
     if (!nob_cmd_run(&cmd)) {
@@ -119,4 +132,6 @@ int main(int argc, char **argv)
         nob_log(NOB_ERROR, "Unknown command: %s", command);
         return 1;
     }
+
+    return 0;
 }

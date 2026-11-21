@@ -10,7 +10,7 @@
 // Expected: window with red triangle, stderr "presented N frames", exit 0.
 // No display: exit 10.
 
-vk :: #library "examples/vulkan/libcmpl_vk.so";
+vk :: #library "examples/vulkan/libcmpl_vk";
 
 cmpl_vk_window :: () -> int #foreign vk;
 

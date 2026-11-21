@@ -8,7 +8,7 @@
 // WASD / arrows move. Auto-drift proves motion without keyboard.
 // Keys: 0=left 1=right 2=up 3=down
 
-vk :: #library "examples/vulkan/libcmpl_vk.so";
+vk :: #library "examples/vulkan/libcmpl_vk";
 
 cmpl_vk_game_open  :: () -> int #foreign vk;
 cmpl_vk_game_poll  :: () -> int #foreign vk;

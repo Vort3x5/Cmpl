@@ -133,8 +133,6 @@ static Token LexerScanIds(Lexer *lexer)
 		type = TOKEN_RETURN;
 	else if (strcmp(lexeme, "defer") == 0) 
 		type = TOKEN_DEFER;
-	else if (strcmp(lexeme, "foreign") == 0) 
-		type = TOKEN_FOREIGN_KW; // legacy; real Jai uses #foreign
 	else if (strcmp(lexeme, "struct") == 0) 
 		type = TOKEN_STRUCT;
 
@@ -299,7 +297,12 @@ Token LexerNextToken(Lexer* lexer)
 			{
 				LexerNextC(lexer);
 				return LexerMakeToken(lexer, TOKEN_RANGE, "..", start_line, start_column);
-			} 
+			}
+			else if (LexerPeek(lexer) == '*')
+			{
+				LexerNextC(lexer);
+				return LexerMakeToken(lexer, TOKEN_DEREF, ".*", start_line, start_column);
+			}
 			else 
 				return LexerMakeToken(lexer, TOKEN_DOT, ".", start_line, start_column);
             
@@ -335,11 +338,6 @@ Token LexerNextToken(Lexer* lexer)
 			{
                 LexerNextC(lexer);
                 return LexerMakeToken(lexer, TOKEN_LESS_EQ, "<=", start_line, start_column);
-            } 
-			else if (LexerPeek(lexer) == '<') 
-			{
-                LexerNextC(lexer);
-                return LexerMakeToken(lexer, TOKEN_DEREF, "<<", start_line, start_column);
             } 
 			else 
                 return LexerMakeToken(lexer, TOKEN_LESS, "<", start_line, start_column);

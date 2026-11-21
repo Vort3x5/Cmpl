@@ -173,7 +173,7 @@ module.exports = grammar({
         field('right', $._expression),
         ';',
       ),
-      // lhs = rhs;  (includes << ptr = val, arr[i] = val, p.x = val)
+      // lhs = rhs;  (includes ptr.* = val, arr[i] = val, p.x = val)
       seq(
         field('left', $._expression),
         '=',
@@ -211,9 +211,9 @@ module.exports = grammar({
       ));
     },
 
-    // ! - * (addr-of)  << (deref)
+    // ! - * (addr-of); deref is postfix .*
     unary_expression: $ => prec.right(5, seq(
-      field('operator', choice('!', '-', '*', '<<')),
+      field('operator', choice('!', '-', '*')),
       field('operand', $._expression),
     )),
 
@@ -221,8 +221,15 @@ module.exports = grammar({
       $.call_expression,
       $.index_expression,
       $.field_access,
+      $.deref_expression,
       $._primary_expression,
     ),
+
+    // The_Way_to_Jai §10: ptr.*
+    deref_expression: $ => prec(10, seq(
+      field('operand', $._postfix_expression),
+      '.*',
+    )),
 
     call_expression: $ => prec(10, seq(
       field('function', $._postfix_expression),

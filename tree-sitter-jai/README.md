@@ -42,4 +42,4 @@ home-manager switch --flake ./home#vortex
 
 ## Highlights
 
-`queries/jai/highlights.scm` — `#library` / `#foreign`, `defer`, types, `<<`, calls in `if`, etc.
+`queries/jai/highlights.scm` — `#library` / `#foreign`, `defer`, types, `.*`, calls in `if`, etc.

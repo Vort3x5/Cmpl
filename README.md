@@ -2,7 +2,7 @@
 
 A Jai-inspired systems programming language built while developing a 2D fantasy Vulkan-Wayland game. Every language feature is driven by real game development needs.
 
-Syntax and semantics are aligned with [The Way to Jai](res/The_Way_to_Jai) where we claim support — this is still a **bootstrap subset**, not a full Jai implementation.
+Syntax and semantics are aligned with [The Way to Jai](https://github.com/Ivo-Balbaert/The_Way_to_Jai) (submodule `res/The_Way_to_Jai`) where we claim support — this is still a **bootstrap subset**, not a full Jai implementation.
 
 ## Core Philosophy
 
@@ -42,12 +42,14 @@ Requires `cc`, `fasm`, and (for `#library` `.so` demos) `ld` on `PATH`.
 | `examples/BasicJai/structs.jai` | **42** | `struc` + field load/store in `out/out.asm` |
 | `examples/BasicJai/arrays.jai` | **30** | `[N]int` indexing |
 | `examples/BasicJai/for_range.jai` | **55** | Jai-inclusive `0..10` → sum 55 |
-| `examples/BasicJai/defer.jai` | **3** | `; defer` LIFO at block end |
-| `examples/BasicJai/pointers.jai` | **108** | `*Type`, `*a`, `<< b` |
+| `examples/BasicJai/defer.jai` | **3** | `defer` LIFO at block end (not yet per-loop-iteration) |
+| `examples/BasicJai/pointers.jai` | **108** | `*Type`, `*a`, `b.*` |
+| `examples/BasicJai/sse_call_expr.jai` | **4** | `1 + fval(2)` — TAC stack temps / SSE ABI |
 | `examples/BasicJai/arena.jai` | **42** | `#foreign cmpl_rt` → `arena_alloc` |
 | `examples/BasicJai/foreign.jai` | **3** | prints **`Hi`**, `#library` / `#foreign` |
-| `examples/BasicJai/foreign_so.jai` | **30** | real `.so` via `ld` (build lib first) |
-| `examples/BasicJai/vulkan_triangle.jai` | **0** | headless red triangle; stderr `rgba=255,0,0,255` |
+| `examples/BasicJai/foreign_so.jai` | **30** | `#library "…/libadd"` (no `.so` in path) |
+| `examples/BasicJai/vulkan_ffi.jai` | **0** | `#system_library "vulkan"` → `vkCreateInstance` (no C helper) |
+| `examples/BasicJai/vulkan_triangle.jai` | **0** | legacy headless triangle via `libcmpl_vk` (shrink, don’t grow) |
 | `examples/BasicJai/loop_fcalls.jai` | **70** | regression |
 | `main.jai` | **251** | bootstrap suite (1019 & 0xFF) |
 
@@ -78,16 +80,15 @@ Details: [examples/vulkan/README.md](examples/vulkan/README.md) · Nix: [`shell.
 - `Name :: …`, `:=`, `name: Type;`, `-> Type`
 - `struct`, field access, fixed `[N]Type` arrays
 - `if` / `while` / `for i: a..b` (**inclusive** ends, per §15/§18)
-- `defer` at block scope (LIFO)
-- Pointers: `*Type`, `*addr`, `<<` deref (§10)
-- FFI: `#library` / `#system_library` + `#foreign lib` (§29)
+- `defer` at block / scope exit (LIFO); loop-body `defer` is not yet per-iteration
+- Pointers: `*Type`, `*addr`, postfix `.*` deref (§10)
+- FFI: `#library` / `#system_library` + `#foreign lib` (§29); library paths omit `.so`
 - Optional C symbol rename: `#foreign lib "CSymbol"`
 
 ### Still diverging / missing (OK for bootstrap)
 - No `#import "Basic"`, `#load`, `#run`, Context, modules
 - No `[]Type` views, `.count`, array literals, `for arr`
 - No `name: Type = expr`, `---`, floats, strings-as-values
-- Defer inside loops is not per-iteration yet
 - `cmpl_rt` is an embedded FASM runtime (stand-in until more of libc/Vulkan is linked)
 
 ## Planned Language Features
@@ -117,7 +118,7 @@ See earlier roadmap: enums, pointers-as-first-class APIs, `#run`, SIMD/`#soa`, s
 
 | Phase | Game Goal | Technical Focus |
 |-------|-----------|----------------|
-| 1 | Vulkan triangle | `#foreign` + `libvulkan` |
+| 1 | Vulkan instance | direct `#foreign` → `libvulkan` (`vulkan_ffi.jai`) |
 | 1b | On-screen triangle | Wayland / XCB + swapchain |
 | 2 | Textured sprites | Image + sampler + textured quad |
 | 3 | Moving player | Jai loop + position; thin C session API |
