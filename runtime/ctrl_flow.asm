@@ -1,14 +1,14 @@
 ; asmsyntax=fasm
 
-; Block-style control flow macros
-macro _BeginIf condition
+; Condition must already be in rax before _BeginIf / _WhileTest.
+
+macro _BeginIf
 {
     local ..if_else, ..if_end
     if_label_else equ ..if_else
     if_label_end equ ..if_end
     if_else_used = 0
     
-    condition
     test rax, rax
     jz ..if_else
 }
@@ -31,16 +31,19 @@ macro _EndIf
     restore if_label_end
 }
 
-macro _BeginWhile condition
+macro _BeginWhile
 {
     local ..while_start, ..while_end
     while_label_start equ ..while_start
     while_label_end equ ..while_end
     
     ..while_start:
-    condition
+}
+
+macro _WhileTest
+{
     test rax, rax
-    jz ..while_end
+    jz while_label_end
 }
 
 macro _EndWhile
@@ -55,6 +58,13 @@ macro _Return expr
 {
     common
     expr
+    mov rsp, rbp
+    pop rbp
+    ret
+}
+
+macro _ReturnRax
+{
     mov rsp, rbp
     pop rbp
     ret

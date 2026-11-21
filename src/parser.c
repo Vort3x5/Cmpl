@@ -26,7 +26,7 @@ void ASTArrayInit(AST_Array *array)
 	};
 }
 
-static void ASTArrayPush(AST_Array *array, AST_Node *node, Arena *arena) 
+void ASTArrayPush(AST_Array *array, AST_Node *node, Arena *arena) 
 {
     if (array->used >= array->size) 
 	{
@@ -43,25 +43,25 @@ static void ASTArrayPush(AST_Array *array, AST_Node *node, Arena *arena)
     array->data[array->used++] = node;
 }
 
+static void CollectVarNamed(AST_Node *node, AST_Array *vars, Arena *arena)
+{
+    if (!node || !node->name) return;
+    
+    for (size_t i = 0; i < vars->used; i++) {
+        if (strcmp(vars->data[i]->name, node->name) == 0)
+            return;
+    }
+    ASTArrayPush(vars, node, arena);
+}
+
 void CollectVariables(AST_Node *node, AST_Array *vars, Arena *arena) 
 {
     if (!node) return;
     
     switch (node->type) {
         case AST_ASSIGNMENT:
-            // Add variable name to list if not already there
-            if (node->name) {
-                bool found = false;
-                for (size_t i = 0; i < vars->used; i++) {
-                    if (strcmp(vars->data[i]->name, node->name) == 0) {
-                        found = true;
-                        break;
-                    }
-                }
-                if (!found) {
-                    ASTArrayPush(vars, node, arena);
-                }
-            }
+        case AST_VAR:
+            CollectVarNamed(node, vars, arena);
             break;
             
         case AST_BLOCK:
@@ -75,7 +75,16 @@ void CollectVariables(AST_Node *node, AST_Array *vars, Arena *arena)
             CollectVariables(node->right, vars, arena);
             break;
             
-        case AST_WHILE:
+		case AST_WHILE:
+            CollectVariables(node->body, vars, arena);
+            break;
+        
+        case AST_FOR_RANGE:
+            CollectVarNamed(node, vars, arena);
+            CollectVariables(node->body, vars, arena);
+            break;
+        
+        case AST_DEFER:
             CollectVariables(node->body, vars, arena);
             break;
             
@@ -226,8 +235,52 @@ static AST_Node *ParsePrimary(Parser *parser)
     return NULL;
 }
 
+static AST_Node *ParseType(Parser *parser)
+{
+    // *T  or  [N]T  or  T
+    bool is_ptr = false;
+    while (ParserMatch(parser, TOKEN_MUL))
+        is_ptr = true;
+    
+    int64_t arr_len = 0;
+    if (ParserMatch(parser, TOKEN_L_BRACKET)) {
+        if (!ParserMatch(parser, TOKEN_NUM)) {
+            ParserError(parser, "Expected array size");
+            return NULL;
+        }
+        arr_len = parser->prev.value.num;
+        ParserConsume(parser, TOKEN_R_BRACKET, "Expected ']' after array size");
+    }
+    
+    if (!ParserMatch(parser, TOKEN_ID)) {
+        ParserError(parser, "Expected type name");
+        return NULL;
+    }
+    
+    AST_Node *type_node = ASTNodeCreate(parser, AST_TYPE);
+    type_node->name = arena_strdup(parser->arena, parser->prev.lexeme);
+    type_node->num = arr_len;
+    if (is_ptr)
+        type_node->flags |= AST_FLAG_POINTER;
+    return type_node;
+}
+
 static AST_Node *ParseUnary(Parser *parser) 
 {
+    // Jai: <<expr  dereference
+    if (ParserMatch(parser, TOKEN_DEREF)) {
+        AST_Node *node = ASTNodeCreate(parser, AST_DEREF);
+        node->right = ParseUnary(parser);
+        return node;
+    }
+    
+    // Jai: *expr  address-of (unary *); binary * handled in ParseFactor
+    if (ParserMatch(parser, TOKEN_MUL)) {
+        AST_Node *node = ASTNodeCreate(parser, AST_ADDR_OF);
+        node->right = ParseUnary(parser);
+        return node;
+    }
+    
     if (ParserMatch(parser, TOKEN_NOT) || ParserMatch(parser, TOKEN_MINUS)) 
 	{
         Token operator = parser->prev;
@@ -342,6 +395,17 @@ static AST_Node *ParseExpressionStatement(Parser *parser)
 {
     AST_Node *expr = ParseExpression(parser);
 
+    // Jai lvalue assign: <<p = 1;  arr[i] = 1;  (also covers plain expr)
+    if (ParserMatch(parser, TOKEN_EQ_ASSIGN)) {
+        AST_Node *node = ASTNodeCreate(parser, AST_ASSIGNMENT);
+        node->left = expr;
+        if (expr && expr->type == AST_ID)
+            node->name = expr->name;
+        node->right = ParseExpression(parser);
+        ParserConsume(parser, TOKEN_SEMICOLON, "Expected ';' after assignment");
+        return node;
+    }
+
 	if (expr && expr->type == AST_CALL) 
 	{
         ParserConsume(parser, TOKEN_SEMICOLON, "Expected ';' after function call");
@@ -356,6 +420,12 @@ static AST_Node *ParseStatement(Parser *parser)
 {
 	if (ParserMatch(parser, TOKEN_RETURN))
         return ParseReturn(parser);
+    
+    if (ParserMatch(parser, TOKEN_DEFER)) {
+        AST_Node *node = ASTNodeCreate(parser, AST_DEFER);
+        node->body = ParseStatement(parser);
+        return node;
+    }
 
     if (ParserMatch(parser, TOKEN_IF))
         return ParseIf(parser);
@@ -381,18 +451,15 @@ static AST_Node *ParseStatement(Parser *parser)
             Token var_name = parser->prev;
             ParserAdvance(parser); // consume ':'
             
-            if (ParserMatch(parser, TOKEN_ID)) 
-			{
-                Token type_name = parser->prev;
+            // x: Type;  /  p: *Type;  /  arr: [N]Type;
+            {
+                AST_Node *type_node = ParseType(parser);
+                if (!type_node) return NULL;
                 ParserConsume(parser, TOKEN_SEMICOLON, "Expected ';' after type declaration");
                 
                 AST_Node *node = ASTNodeCreate(parser, AST_ASSIGNMENT);
                 node->name = arena_strdup(parser->arena, var_name.lexeme);
-                
-                AST_Node *type_node = ASTNodeCreate(parser, AST_TYPE);
-                type_node->name = arena_strdup(parser->arena, type_name.lexeme);
                 node->right = type_node;
-                
                 return node;
             }
         }
@@ -419,6 +486,19 @@ static AST_Node *ParseStatement(Parser *parser)
 		parser->prev = saved_prev_token;
 		
 		AST_Node *lhs = ParseExpression(parser);
+		
+		if (ParserMatch(parser, TOKEN_EQ_ASSIGN)) 
+		{
+			AST_Node *rhs = ParseExpression(parser);
+			ParserConsume(parser, TOKEN_SEMICOLON, "Expected ';' after assignment");
+			
+			AST_Node *node = ASTNodeCreate(parser, AST_ASSIGNMENT);
+			node->left = lhs;
+			node->right = rhs;
+			if (lhs && lhs->type == AST_ID)
+				node->name = lhs->name;
+			return node;
+		}
 		
 		if (lhs && lhs->type == AST_CALL) 
 		{
@@ -529,14 +609,7 @@ static AST_Node *ParseProcedure(Parser *parser)
                 param->name = arena_strdup(parser->arena, param_name.lexeme);
                 
                 if (ParserMatch(parser, TOKEN_COLON)) 
-				{
-                    if (ParserMatch(parser, TOKEN_ID)) 
-					{
-                        AST_Node *type_node = ASTNodeCreate(parser, AST_TYPE);
-                        type_node->name = arena_strdup(parser->arena, parser->prev.lexeme);
-                        param->right = type_node;
-                    }
-                }
+                    param->right = ParseType(parser);
                 
                 ASTArrayPush(&proc->children, param, parser->arena);
             }
@@ -546,13 +619,41 @@ static AST_Node *ParseProcedure(Parser *parser)
     ParserConsume(parser, TOKEN_R_PAREN, "Expected ')' after parameters");
     
     if (ParserMatch(parser, TOKEN_ARROW)) 
-	{
-        if (ParserMatch(parser, TOKEN_ID)) 
-		{
-            AST_Node *return_type = ASTNodeCreate(parser, AST_TYPE);
-            return_type->name = arena_strdup(parser->arena, parser->prev.lexeme);
-            proc->left = return_type;
+        proc->left = ParseType(parser);
+    
+    // Jai:  name :: (...) -> T #foreign libc;
+    //       name :: (...) -> T #foreign libc "CSymbol";
+    if (ParserMatch(parser, TOKEN_HASH)) {
+        // 'foreign' may be TOKEN_FOREIGN_KW (keyword) or TOKEN_ID
+        bool got_foreign = ParserMatch(parser, TOKEN_FOREIGN_KW)
+            || (ParserMatch(parser, TOKEN_ID) && strcmp(parser->prev.lexeme, "foreign") == 0);
+        if (!got_foreign) {
+            ParserError(parser, "Expected 'foreign' after '#'");
+            return proc;
         }
+        proc->flags |= AST_FLAG_FOREIGN;
+        if (ParserMatch(parser, TOKEN_ID))
+            proc->str = arena_strdup(parser->arena, parser->prev.lexeme); // library binding
+        if (ParserMatch(parser, TOKEN_STR)) {
+            // Optional C symbol rename — stash on a dummy body node
+            AST_Node *sym = ASTNodeCreate(parser, AST_ID);
+            sym->name = arena_strdup(parser->arena, parser->prev.value.str
+                ? parser->prev.value.str : parser->prev.lexeme);
+            proc->body = sym;
+        } else {
+            proc->body = NULL;
+        }
+        ParserMatch(parser, TOKEN_SEMICOLON);
+        return proc;
+    }
+    
+    // Legacy keyword (not real Jai) — still accepted temporarily
+    if (ParserMatch(parser, TOKEN_FOREIGN_KW)) {
+        proc->flags |= AST_FLAG_FOREIGN;
+        proc->str = arena_strdup(parser->arena, "cmpl_rt");
+        ParserMatch(parser, TOKEN_SEMICOLON);
+        proc->body = NULL;
+        return proc;
     }
     
     proc->body = ParseBlock(parser);
@@ -578,20 +679,52 @@ static AST_Node *ParseDeclaration(Parser *parser)
             
             if (ParserMatch(parser, TOKEN_STRUCT)) 
 			{
-                // It's a struct: Name :: struct { }
                 AST_Node *struct_def = ParseStruct(parser);
                 struct_def->name = arena_strdup(parser->arena, name.lexeme);
                 return struct_def;
             }
             
-            // Not a struct, restore state and parse as procedure
+            // name :: #system_library "libc";  /  name :: #library "libfoo";
+            // NOTE: `name :: () #foreign …` must NOT be eaten here — restore & ParseProcedure.
+            if (ParserCheck(parser, TOKEN_HASH)) {
+                Token hash_tok = parser->curr;
+                ParserAdvance(parser); // #
+                if (ParserMatch(parser, TOKEN_ID)) {
+                    const char *dir = parser->prev.lexeme;
+                    bool is_system = strcmp(dir, "system_library") == 0;
+                    bool is_lib = strcmp(dir, "library") == 0;
+                    if (is_system || is_lib) {
+                        if (!ParserMatch(parser, TOKEN_STR)) {
+                            ParserError(parser, "Expected library path string");
+                            return NULL;
+                        }
+                        AST_Node *lib = ASTNodeCreate(parser, AST_LIBRARY);
+                        lib->name = arena_strdup(parser->arena, name.lexeme);
+                        lib->str = arena_strdup(parser->arena,
+                            parser->prev.value.str ? parser->prev.value.str : parser->prev.lexeme);
+                        if (is_system)
+                            lib->flags |= AST_FLAG_SYSTEM_LIB;
+                        ParserMatch(parser, TOKEN_SEMICOLON);
+                        return lib;
+                    }
+                }
+                // Not a library directive (e.g. will be #foreign on a proc) — full restore
+                (void)hash_tok;
+                parser->lexer->curr = saved_curr;
+                parser->lexer->line = saved_line;
+                parser->lexer->column = saved_column;
+                parser->curr = saved_curr_token;
+                parser->prev = saved_prev_token;
+                return ParseProcedure(parser);
+            }
+            
+            // Not a struct/library, restore and parse as procedure
             parser->lexer->curr = saved_curr;
             parser->lexer->line = saved_line;
             parser->lexer->column = saved_column;
             parser->curr = saved_curr_token;
             parser->prev = saved_prev_token;
             
-            // Now parse as normal procedure
             return ParseProcedure(parser);
         } 
 		else 

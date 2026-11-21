@@ -3,6 +3,8 @@
 #include <nob.h>
 #include <cmpl.h>
 
+static const char *arg_regs[] = {"rdi", "rsi", "rdx", "rcx", "r8", "r9"};
+
 static void GenInit(Generator *g, Arena *a)
 {
 	*g = (Generator){
@@ -11,20 +13,28 @@ static void GenInit(Generator *g, Arena *a)
 		.local_offset = 0,
 		.temp_count = 0,
 		.types = {0},
+		.locals = {0},
+		.defers = {0},
+		.libraries = {0},
+		.foreigns = {0},
 	};
-}
-
-static void RegisterType(Generator *g, const char *name, int size) 
-{
-    TypeInfo info = { 
-		.name = name, 
-		.size = size 
-	};
-    arena_da_append(g->arena, &g->types, info);
+    
+    // Builtins
+    TypeInfo builtins[] = {
+        { .name = "int", .size = 8 },
+        { .name = "s64", .size = 8 },
+        { .name = "u64", .size = 8 },
+        { .name = "u32", .size = 4 },
+        { .name = "u16", .size = 2 },
+        { .name = "u8",  .size = 1 },
+    };
+    for (size_t i = 0; i < sizeof(builtins)/sizeof(builtins[0]); i++)
+        arena_da_append(g->arena, &g->types, builtins[i]);
 }
 
 static TypeInfo* FindType(Generator *g, const char *name)
 {
+    if (!name) return NULL;
     for (size_t i = 0; i < g->types.count; i++) 
         if (strcmp(g->types.items[i].name, name) == 0) 
             return &g->types.items[i];
@@ -34,7 +44,56 @@ static TypeInfo* FindType(Generator *g, const char *name)
 static int GetTypeSize(Generator *g, const char *type_name)
 {
     TypeInfo *info = FindType(g, type_name);
-    return info ? info->size : 8;
+    return info ? (int)info->size : 8;
+}
+
+static void LocalsClear(Generator *g)
+{
+    g->locals.count = 0;
+}
+
+static void LocalsAdd(Generator *g, const char *name, const char *type_name, int array_len)
+{
+    for (size_t i = 0; i < g->locals.count; i++) {
+        if (strcmp(g->locals.items[i].name, name) == 0) {
+            if (type_name)
+                g->locals.items[i].type_name = type_name;
+            if (array_len > 0)
+                g->locals.items[i].array_len = array_len;
+            return;
+        }
+    }
+    LocalInfo info = {
+        .name = name,
+        .type_name = type_name ? type_name : "int",
+        .array_len = array_len,
+    };
+    arena_da_append(g->arena, &g->locals, info);
+}
+
+static LocalInfo* LocalsFind(Generator *g, const char *name)
+{
+    for (size_t i = 0; i < g->locals.count; i++) {
+        if (strcmp(g->locals.items[i].name, name) == 0)
+            return &g->locals.items[i];
+    }
+    return NULL;
+}
+
+static const char* LocalsGetType(Generator *g, const char *name)
+{
+    LocalInfo *loc = LocalsFind(g, name);
+    return loc ? loc->type_name : "int";
+}
+
+static FieldInfo* FindField(TypeInfo *type, const char *field_name)
+{
+    if (!type) return NULL;
+    for (size_t i = 0; i < type->field_count; i++) {
+        if (strcmp(type->fields[i].name, field_name) == 0)
+            return &type->fields[i];
+    }
+    return NULL;
 }
 
 static const char* JaiToFasmType(const char *jai_type)
@@ -49,7 +108,7 @@ static const char* JaiToFasmType(const char *jai_type)
 		return "dw";
     if (strcmp(jai_type, "u8") == 0) 
 		return "db";
-    return NULL;  // It's a struct type
+    return NULL;
 }
 
 static void GenEmit(Generator *g, const char *fmt, ...)
@@ -64,153 +123,209 @@ static void GenEmit(Generator *g, const char *fmt, ...)
 	va_end(args);
 }
 
-static void EmitTACInst(Generator *g, TAC_Inst *inst) 
-{
-    switch (inst->type) 
-	{
-        case TAC_BINOP: {
-            const char *macro = NULL;
-            if (strcmp(inst->op, "+") == 0) macro = "_Add";
-            else if (strcmp(inst->op, "-") == 0) macro = "_Sub";
-            else if (strcmp(inst->op, "*") == 0) macro = "_Mul";
-            else if (strcmp(inst->op, "==") == 0) macro = "_Equal";
-            else if (strcmp(inst->op, "<") == 0) macro = "_Less";
-            else if (strcmp(inst->op, ">") == 0) macro = "_Greater";
-            
-            if (macro) 
-			{
-                bool src1_is_num = (inst->src1 && ((inst->src1[0] >= '0' && inst->src1[0] <= '9') || inst->src1[0] == '-'));
-                bool src2_is_num = (inst->src2 && ((inst->src2[0] >= '0' && inst->src2[0] <= '9') || inst->src2[0] == '-'));
-                
-                GenEmit(g, "    _Assign %s, <%s ", inst->dest, macro);
-                
-                if (src1_is_num) 
-                    GenEmit(g, "_Num %s", inst->src1);
-				else
-                    GenEmit(g, "<_Var %s>", inst->src1);
-                
-                GenEmit(g, ", ");
-                
-                if (src2_is_num) 
-                    GenEmit(g, "_Num %s", inst->src2);
-                else
-                    GenEmit(g, "<_Var %s>", inst->src2);
-                
-                GenEmit(g, ">\n");
-            }
-            break;
-        }
-        
-        case TAC_COPY: {
-            // MOVED INSIDE: only check src1
-            bool src1_is_num = (inst->src1 && ((inst->src1[0] >= '0' && inst->src1[0] <= '9') || inst->src1[0] == '-'));
-            
-            if (src1_is_num)
-                GenEmit(g, "    _Assign %s, _Num %s\n", inst->dest, inst->src1);
-            else
-                GenEmit(g, "    _Assign %s, <_Var %s>\n", inst->dest, inst->src1);
-            break;
-        }
-        
-        case TAC_CALL: 
-            GenEmit(g, "    call func_%s\n", inst->src1);
-            GenEmit(g, "    _StoreVar %s, rax\n", inst->dest);
-            break;
-        
-        case TAC_RETURN: {
-            // MOVED INSIDE: only check src1
-            bool src1_is_num = (inst->src1 && ((inst->src1[0] >= '0' && inst->src1[0] <= '9') || inst->src1[0] == '-'));
-            
-            if (src1_is_num) 
-                GenEmit(g, "    _Return _Num %s\n", inst->src1);
-            else
-                GenEmit(g, "    _Return <_Var %s>\n", inst->src1);
-            break;
-        }
-        
-        default:
-            break;
-    }
-}
+// Evaluate expression into rax using push/pop (no nested binop macros).
+static void GenExprStmt(Generator *g, AST_Node *node);
 
-static void GenBinOp(Generator *g, AST_Node *node)
+static void GenBinOpStmt(Generator *g, AST_Node *node)
 {
     const char *op = node->name;
     
-    if (strcmp(op, "+") == 0) 
-	{
-        GenEmit(g, "<_Add ");
-        GenExpr(g, node->left);
-        GenEmit(g, ", ");
-        GenExpr(g, node->right);
-        GenEmit(g, ">");
-    } 
-	else if (strcmp(op, "-") == 0) 
-	{
-        GenEmit(g, "<_Sub ");
-        GenExpr(g, node->left);
-        GenEmit(g, ", ");
-        GenExpr(g, node->right);
-        GenEmit(g, ">");
-    } 
-	else if (strcmp(op, "*") == 0) 
-	{
-        GenEmit(g, "<_Mul ");
-        GenExpr(g, node->left);
-        GenEmit(g, ", ");
-        GenExpr(g, node->right);
-        GenEmit(g, ">");
-    } 
-	else if (strcmp(op, "==") == 0) 
-	{
-        GenEmit(g, "<_Equal ");
-        GenExpr(g, node->left);
-        GenEmit(g, ", ");
-        GenExpr(g, node->right);
-        GenEmit(g, ">");
-    } 
-	else if (strcmp(op, "<") == 0) 
-	{
-        GenEmit(g, "<_Less ");
-        GenExpr(g, node->left);
-        GenEmit(g, ", ");
-        GenExpr(g, node->right);
-        GenEmit(g, ">");
-    } 
-	else if (strcmp(op, ">") == 0) 
-	{
-        GenEmit(g, "<_Greater ");
-        GenExpr(g, node->left);
-        GenEmit(g, ", ");
-        GenExpr(g, node->right);
-        GenEmit(g, ">");
+    GenExprStmt(g, node->left);
+    GenEmit(g, "\n    push rax\n    ");
+    GenExprStmt(g, node->right);
+    GenEmit(g, "\n    mov rbx, rax\n    pop rax\n");
+    
+    if (strcmp(op, "+") == 0) {
+        GenEmit(g, "    add rax, rbx\n");
+    } else if (strcmp(op, "-") == 0) {
+        GenEmit(g, "    sub rax, rbx\n");
+    } else if (strcmp(op, "*") == 0) {
+        GenEmit(g, "    imul rax, rbx\n");
+    } else if (strcmp(op, "==") == 0) {
+        GenEmit(g, "    cmp rax, rbx\n");
+        GenEmit(g, "    mov rax, 0\n");
+        GenEmit(g, "    sete al\n");
+    } else if (strcmp(op, "<") == 0) {
+        GenEmit(g, "    cmp rax, rbx\n");
+        GenEmit(g, "    mov rax, 0\n");
+        GenEmit(g, "    setl al\n");
+    } else if (strcmp(op, ">") == 0) {
+        GenEmit(g, "    cmp rax, rbx\n");
+        GenEmit(g, "    mov rax, 0\n");
+        GenEmit(g, "    setg al\n");
+    } else {
+        nob_log(NOB_ERROR, "Unsupported binary operator: %s", op);
     }
 }
 
-static void GenExpr(Generator *g, AST_Node *node) 
+static void GenCallArgs(Generator *g, AST_Node *call)
 {
-    if (!node) 
-		return;
+    size_t nargs = call->children.used;
+    if (nargs > 6) {
+        nob_log(NOB_ERROR, "More than 6 arguments not supported");
+        nargs = 6;
+    }
     
-    switch (node->type) 
-	{
-        case AST_NUM:
-            GenEmit(g, "_Num %lld", node->num);
-            break;
-            
-        case AST_ID:
-            GenEmit(g, "<_Var %s>", node->name);
-            break;
-            
-        case AST_BIN_OP:
-            GenBinOp(g, node);
-            break;
+    for (size_t i = 0; i < nargs; i++) {
+        GenEmit(g, "    ");
+        GenExprStmt(g, call->children.data[i]);
+        GenEmit(g, "\n    push rax\n");
+    }
+    
+    for (size_t i = nargs; i > 0; i--) {
+        GenEmit(g, "    pop %s\n", arg_regs[i - 1]);
+    }
+}
 
-		case AST_CALL:
-			if (node->left && node->left->type == AST_ID) 
-				GenEmit(g, "call label_%s", node->left->name);
-			break;
-            
+static const char* ForeignSymbol(Generator *g, const char *jai_name)
+{
+    for (size_t i = 0; i < g->foreigns.count; i++) {
+        if (strcmp(g->foreigns.items[i].jai_name, jai_name) == 0)
+            return g->foreigns.items[i].c_symbol;
+    }
+    return NULL;
+}
+
+static void GenCall(Generator *g, AST_Node *call)
+{
+    if (!call->left || call->left->type != AST_ID) {
+        nob_log(NOB_ERROR, "Call target must be an identifier");
+        return;
+    }
+    GenCallArgs(g, call);
+    const char *sym = ForeignSymbol(g, call->left->name);
+    if (sym)
+        GenEmit(g, "    call %s\n", sym);
+    else
+        GenEmit(g, "    call func_%s\n", call->left->name);
+}
+
+static void GenAddrOf(Generator *g, AST_Node *node)
+{
+    // *id  → lea rax, [rbp - id_offset]
+    if (!node->right || node->right->type != AST_ID) {
+        nob_log(NOB_ERROR, "Only *local_var address-of supported");
+        return;
+    }
+    GenEmit(g, "lea rax, [rbp - %s_offset]", node->right->name);
+}
+
+static void GenDerefLoad(Generator *g, AST_Node *node)
+{
+    GenExprStmt(g, node->right);
+    GenEmit(g, "\n    mov rax, [rax]");
+}
+
+static void GenDerefStore(Generator *g, AST_Node *deref_node)
+{
+    // value in rax; compute address, store
+    GenEmit(g, "    push rax\n");
+    GenEmit(g, "    ");
+    GenExprStmt(g, deref_node->right);
+    GenEmit(g, "\n    mov rbx, rax\n");
+    GenEmit(g, "    pop rax\n");
+    GenEmit(g, "    mov [rbx], rax\n");
+}
+
+static void GenFieldLoad(Generator *g, AST_Node *access)
+{
+    if (!access->left || access->left->type != AST_ID) {
+        nob_log(NOB_ERROR, "Only simple var.field access supported");
+        return;
+    }
+    const char *var = access->left->name;
+    const char *type_name = LocalsGetType(g, var);
+    TypeInfo *type = FindType(g, type_name);
+    FieldInfo *field = FindField(type, access->name);
+    if (!field) {
+        nob_log(NOB_ERROR, "Unknown field %s.%s (type %s)", var, access->name, type_name);
+        return;
+    }
+    GenEmit(g, "_LoadField rax, %s, %zu", var, field->offset);
+}
+
+static void GenFieldStore(Generator *g, AST_Node *access)
+{
+    if (!access->left || access->left->type != AST_ID) {
+        nob_log(NOB_ERROR, "Only simple var.field store supported");
+        return;
+    }
+    const char *var = access->left->name;
+    const char *type_name = LocalsGetType(g, var);
+    TypeInfo *type = FindType(g, type_name);
+    FieldInfo *field = FindField(type, access->name);
+    if (!field) {
+        nob_log(NOB_ERROR, "Unknown field %s.%s (type %s)", var, access->name, type_name);
+        return;
+    }
+    GenEmit(g, "    _StoreField %s, %zu, rax\n", var, field->offset);
+}
+
+static void GenIndexLoad(Generator *g, AST_Node *index_node)
+{
+    if (!index_node->left || index_node->left->type != AST_ID) {
+        nob_log(NOB_ERROR, "Only simple arr[i] supported");
+        return;
+    }
+    const char *var = index_node->left->name;
+    LocalInfo *loc = LocalsFind(g, var);
+    int elem_size = GetTypeSize(g, loc ? loc->type_name : "int");
+    
+    GenExprStmt(g, index_node->right);
+    GenEmit(g, "\n    mov rcx, rax\n");
+    GenEmit(g, "    imul rcx, %d\n", elem_size);
+    GenEmit(g, "    mov rax, [rbp + rcx - %s_offset]", var);
+}
+
+static void GenIndexStore(Generator *g, AST_Node *index_node)
+{
+    // value in rax; preserve it while computing address
+    if (!index_node->left || index_node->left->type != AST_ID) {
+        nob_log(NOB_ERROR, "Only simple arr[i] store supported");
+        return;
+    }
+    const char *var = index_node->left->name;
+    LocalInfo *loc = LocalsFind(g, var);
+    int elem_size = GetTypeSize(g, loc ? loc->type_name : "int");
+    
+    GenEmit(g, "    push rax\n");
+    GenEmit(g, "    ");
+    GenExprStmt(g, index_node->right);
+    GenEmit(g, "\n    mov rcx, rax\n");
+    GenEmit(g, "    imul rcx, %d\n", elem_size);
+    GenEmit(g, "    pop rax\n");
+    GenEmit(g, "    mov [rbp + rcx - %s_offset], rax\n", var);
+}
+
+static void GenExprStmt(Generator *g, AST_Node *node)
+{
+    if (!node) return;
+    
+    switch (node->type) {
+        case AST_NUM:
+            GenEmit(g, "mov rax, %lld", (long long)node->num);
+            break;
+        case AST_ID:
+            GenEmit(g, "_LoadVar rax, %s", node->name);
+            break;
+        case AST_FIELD_ACCESS:
+            GenFieldLoad(g, node);
+            break;
+        case AST_INDEX:
+            GenIndexLoad(g, node);
+            break;
+        case AST_ADDR_OF:
+            GenAddrOf(g, node);
+            break;
+        case AST_DEREF:
+            GenDerefLoad(g, node);
+            break;
+        case AST_BIN_OP:
+            GenBinOpStmt(g, node);
+            break;
+        case AST_CALL:
+            GenCall(g, node);
+            break;
         default:
             nob_log(NOB_ERROR, "Unsupported expression type: %d", node->type);
             break;
@@ -219,46 +334,80 @@ static void GenExpr(Generator *g, AST_Node *node)
 
 static void GenAssign(Generator *g, AST_Node *node) 
 {
-    if (node->right && node->right->type == AST_CALL) 
-	{
-        AST_Node *call = node->right;
-        if (call->left && call->left->type == AST_ID) 
-		{
-            GenEmit(g, "    call label_%s\n", call->left->name);
-            GenEmit(g, "    _StoreVar %s, rax\n", node->name);
-        }
+    if (node->left && node->left->type == AST_FIELD_ACCESS) {
+        GenEmit(g, "    ");
+        GenExprStmt(g, node->right);
+        GenEmit(g, "\n");
+        GenFieldStore(g, node->left);
         return;
     }
     
-    GenEmit(g, "    _Assign %s, ", node->name);
-    GenExpr(g, node->right);
-    GenEmit(g, "\n");
+    if (node->left && node->left->type == AST_INDEX) {
+        GenEmit(g, "    ");
+        GenExprStmt(g, node->right);
+        GenEmit(g, "\n");
+        GenIndexStore(g, node->left);
+        return;
+    }
+    
+    if (node->left && node->left->type == AST_DEREF) {
+        GenEmit(g, "    ");
+        GenExprStmt(g, node->right);
+        GenEmit(g, "\n");
+        GenDerefStore(g, node->left);
+        return;
+    }
+    
+    if (node->right && node->right->type == AST_CALL) 
+	{
+        GenCall(g, node->right);
+        GenEmit(g, "    _StoreVar %s, rax\n", node->name);
+        return;
+    }
+    
+    GenEmit(g, "    ");
+    GenExprStmt(g, node->right);
+    GenEmit(g, "\n    _StoreVar %s, rax\n", node->name);
+}
+
+static void GenEmitDefers(Generator *g, size_t from)
+{
+    // LIFO: last deferred runs first
+    for (size_t i = g->defers.count; i > from; i--) {
+        GenEmit(g, "    ; defer\n");
+        GenStmt(g, g->defers.items[i - 1]);
+    }
+}
+
+static void GenReturn(Generator *g, AST_Node *node)
+{
+    // Evaluate return value first, then run defers, then exit.
+    if (!node->right) {
+        GenEmit(g, "    mov rax, 0\n");
+    } else {
+        GenEmit(g, "    ");
+        GenExprStmt(g, node->right);
+        GenEmit(g, "\n");
+    }
+    GenEmit(g, "    push rax\n");
+    GenEmitDefers(g, 0);
+    GenEmit(g, "    pop rax\n");
+    GenEmit(g, "    _ReturnRax\n");
 }
 
 static void GenIf(Generator *g, AST_Node *node) 
 {
-    TAC_Builder tb;
-    TACInit(&tb, g->arena);
-    char *cond_result = ExprToTAC(&tb, node->left);
-    
-    for (TAC_Inst *inst = tb.head; inst != NULL; inst = inst->next) 
-        EmitTACInst(g, inst);
-    
-    GenEmit(g, "    _BeginIf <_Var %s>\n", cond_result);
+    GenEmit(g, "    ");
+    GenExprStmt(g, node->left);
+    GenEmit(g, "\n    _BeginIf\n");
     
     if (node->body) 
-	{
-        TAC_Inst *body_tac = FuncBodyToTAC(node->body, g->arena);
-        for (TAC_Inst *inst = body_tac; inst != NULL; inst = inst->next) 
-            EmitTACInst(g, inst);
-    }
+        GenStmt(g, node->body);
     
     if (node->right) 
 	{
         GenEmit(g, "    _Else\n");
-        TAC_Inst *else_tac = FuncBodyToTAC(node->right, g->arena);
-        for (TAC_Inst *inst = else_tac; inst != NULL; inst = inst->next) 
-            EmitTACInst(g, inst);
+        GenStmt(g, node->right);
     }
     
     GenEmit(g, "    _EndIf\n");
@@ -266,20 +415,68 @@ static void GenIf(Generator *g, AST_Node *node)
 
 static void GenWhile(Generator *g, AST_Node *node) 
 {
-    TAC_Builder tb;
-    TACInit(&tb, g->arena);
-    char *cond_result = ExprToTAC(&tb, node->left);
-    
-    for (TAC_Inst *inst = tb.head; inst != NULL; inst = inst->next) 
-        EmitTACInst(g, inst);
-    GenEmit(g, "    _BeginWhile <_Var %s>\n", cond_result);
+    GenEmit(g, "    _BeginWhile\n");
+    GenEmit(g, "    ");
+    GenExprStmt(g, node->left);
+    GenEmit(g, "\n    _WhileTest\n");
     
     if (node->body) 
-	{
-        TAC_Inst *body_tac = FuncBodyToTAC(node->body, g->arena);
-        for (TAC_Inst *inst = body_tac; inst != NULL; inst = inst->next) 
-            EmitTACInst(g, inst);
+        GenStmt(g, node->body);
+    
+    GenEmit(g, "    _EndWhile\n");
+}
+
+static void GenFor(Generator *g, AST_Node *node)
+{
+    // Jai: `for i: a..b` is inclusive on both ends (The_Way_to_Jai §15 / §18).
+    const char *it = node->name ? node->name : "it";
+    bool reverse = (node->flags & AST_FLAG_REVERSE) != 0;
+    
+    if (reverse) {
+        // for < i: start..end  =>  i = end; while i >= start; body; i -= 1
+        GenEmit(g, "    ");
+        GenExprStmt(g, node->right);
+        GenEmit(g, "\n    _StoreVar %s, rax\n", it);
+        
+        GenEmit(g, "    _BeginWhile\n");
+        GenEmit(g, "    _LoadVar rax, %s\n", it);
+        GenEmit(g, "    push rax\n    ");
+        GenExprStmt(g, node->left);
+        GenEmit(g, "\n    mov rbx, rax\n    pop rax\n");
+        GenEmit(g, "    cmp rax, rbx\n");
+        GenEmit(g, "    mov rax, 0\n");
+        GenEmit(g, "    setge al\n");
+        GenEmit(g, "    _WhileTest\n");
+    } else {
+        // for i: start..end  =>  i = start; while i <= end; body; i += 1
+        GenEmit(g, "    ");
+        GenExprStmt(g, node->left);
+        GenEmit(g, "\n    _StoreVar %s, rax\n", it);
+        
+        GenEmit(g, "    _BeginWhile\n");
+        GenEmit(g, "    _LoadVar rax, %s\n", it);
+        GenEmit(g, "    push rax\n    ");
+        GenExprStmt(g, node->right);
+        GenEmit(g, "\n    mov rbx, rax\n    pop rax\n");
+        GenEmit(g, "    cmp rax, rbx\n");
+        GenEmit(g, "    mov rax, 0\n");
+        GenEmit(g, "    setle al\n");
+        GenEmit(g, "    _WhileTest\n");
     }
+    
+    if (node->body)
+        GenStmt(g, node->body);
+    
+    if (reverse) {
+        GenEmit(g, "    _LoadVar rax, %s\n", it);
+        GenEmit(g, "    sub rax, 1\n");
+        GenEmit(g, "    _StoreVar %s, rax\n", it);
+    } else {
+        GenEmit(g, "    _LoadVar rax, %s\n", it);
+        GenEmit(g, "    add rax, 1\n");
+        GenEmit(g, "    _StoreVar %s, rax\n", it);
+    }
+    
     GenEmit(g, "    _EndWhile\n");
 }
 
@@ -291,15 +488,37 @@ static void GenStruct(Generator *g, AST_Node *node)
         return;
     }
     
-    int total_size = 0;
+    size_t field_count = 0;
+    for (size_t i = 0; i < node->children.used; i++) {
+        if (node->children.data[i]->type == AST_FIELD)
+            field_count++;
+    }
+    
+    FieldInfo *fields = arena_alloc(g->arena, field_count * sizeof(FieldInfo));
+    size_t total_size = 0;
+    size_t fi = 0;
+    
     for (size_t i = 0; i < node->children.used; i++) 
 	{
         AST_Node *field = node->children.data[i];
-        if (field->type == AST_FIELD && field->right) 
-            total_size += GetTypeSize(g, field->right->name);
+        if (field->type != AST_FIELD || !field->name || !field->right) 
+            continue;
+        
+        size_t fsize = (size_t)GetTypeSize(g, field->right->name);
+        fields[fi].name = field->name;
+        fields[fi].offset = total_size;
+        fields[fi].size = fsize;
+        total_size += fsize;
+        fi++;
     }
     
-    RegisterType(g, node->name, total_size);
+    TypeInfo info = {
+        .name = node->name,
+        .size = total_size,
+        .fields = fields,
+        .field_count = fi,
+    };
+    arena_da_append(g->arena, &g->types, info);
     
     GenEmit(g, "struc %s\n{\n", node->name);
     
@@ -340,24 +559,36 @@ static void GenStmt(Generator *g, AST_Node *node)
         case AST_WHILE:
             GenWhile(g, node);
             break;
+        
+        case AST_FOR_RANGE:
+            GenFor(g, node);
+            break;
             
         case AST_STRUCT:
             GenStruct(g, node);
             break;
-            
-        case AST_BLOCK:
-			TAC_Inst *tac = FuncBodyToTAC(node, g->arena);
-            for (TAC_Inst *inst = tac; inst != NULL; inst = inst->next) 
-			{
-                if (inst->type == TAC_JUMP_IF || inst->type == TAC_JUMP_IF_NOT) 
-				{
-                    AST_Node *ctrl_node = (AST_Node*)inst->src1;
-                    GenStmt(g, ctrl_node);
-                } 
-				else
-                    EmitTACInst(g, inst);
-            }
+        
+        case AST_RETURN:
+            GenReturn(g, node);
             break;
+        
+        case AST_DEFER:
+            arena_da_append(g->arena, &g->defers, node->body);
+            break;
+        
+        case AST_CALL:
+            GenCall(g, node);
+            break;
+            
+        case AST_BLOCK: {
+            size_t defer_start = g->defers.count;
+            for (size_t i = 0; i < node->children.used; i++)
+                GenStmt(g, node->children.data[i]);
+            // Scope exit: run defers registered in this block (LIFO)
+            GenEmitDefers(g, defer_start);
+            g->defers.count = defer_start;
+            break;
+        }
             
         default:
             nob_log(NOB_WARNING, "Unsupported statement type: %d", node->type);
@@ -365,62 +596,85 @@ static void GenStmt(Generator *g, AST_Node *node)
     }
 }
 
+static int VarSize(Generator *g, AST_Node *var)
+{
+    if (var->right && var->right->type == AST_TYPE) {
+        if (var->right->flags & AST_FLAG_POINTER)
+            return 8;
+        int elem = GetTypeSize(g, var->right->name);
+        if (var->right->num > 0)
+            return elem * (int)var->right->num;
+        return elem;
+    }
+    return 8;
+}
+
 static void GenProc(Generator *g, AST_Node *node) 
 {
     const char *func_name = node->name ? node->name : "anonymous";
     
-    TAC_Inst *tac = FuncBodyToTAC(node->body, g->arena);
+    // #foreign: symbol provided by runtime / linker — emit nothing
+    if (node->flags & AST_FLAG_FOREIGN) {
+        const char *c_sym = (node->body && node->body->name) ? node->body->name : func_name;
+        const char *lib = node->str ? node->str : "cmpl_rt";
+        ForeignInfo info = {
+            .jai_name = func_name,
+            .c_symbol = c_sym,
+            .lib = lib,
+        };
+        arena_da_append(g->arena, &g->foreigns, info);
+        GenEmit(g, "; #foreign %s %s", lib, c_sym);
+        if (strcmp(c_sym, func_name) != 0)
+            GenEmit(g, " (as %s)", func_name);
+        GenEmit(g, "\n");
+        return;
+    }
     
-    // Collect ALL variables from function body (including nested scopes)
+    LocalsClear(g);
+    g->defers.count = 0;
+    
     AST_Array all_vars = {0};
     ASTArrayInit(&all_vars);
+    
+    for (size_t i = 0; i < node->children.used; i++) {
+        AST_Node *param = node->children.data[i];
+        if (param->type == AST_VAR && param->name)
+            ASTArrayPush(&all_vars, param, g->arena);
+    }
+    
     CollectVariables(node->body, &all_vars, g->arena);
     
-    // Calculate locals size
-    int locals_size = 0;
-    
-    // Count size of all variables
     for (size_t i = 0; i < all_vars.used; i++) {
         AST_Node *var = all_vars.data[i];
-        if (var->right && var->right->type == AST_TYPE) {
-            const char *type_name = var->right->name;
-            int type_size = GetTypeSize(g, type_name);
-            locals_size += type_size;
-        } else {
-            locals_size += 8;
+        const char *ty = "int";
+        int arr_len = 0;
+        if (var->right && var->right->type == AST_TYPE && var->right->name) {
+            ty = var->right->name;
+            arr_len = (int)var->right->num;
         }
+        LocalsAdd(g, var->name, ty, arr_len);
     }
     
-    // Count temps from TAC
-    int temp_count = TACGetMaxTemp(tac) + 1;
-    if (temp_count > 0) {
-        locals_size += temp_count * 8;
-    }
+    int locals_size = 0;
+    for (size_t i = 0; i < all_vars.used; i++)
+        locals_size += VarSize(g, all_vars.data[i]);
+    
+    if (locals_size % 16 != 0)
+        locals_size += 16 - (locals_size % 16);
     
     GenEmit(g, "_FuncBeginWithLocals func_%s, %d\n", func_name, locals_size);
     
-    // Declare all variables
-    int offset = 0;
     for (size_t i = 0; i < all_vars.used; i++) {
         AST_Node *var = all_vars.data[i];
-        if (var->right && var->right->type == AST_TYPE) {
-            const char *type_name = var->right->name;
-            int type_size = GetTypeSize(g, type_name);
-            offset += type_size;
-            GenEmit(g, "    _DeclareVar %s, %d\n", var->name, type_size);
-            GenEmit(g, "    %s_offset = %d\n", var->name, offset);
-        } else {
-            offset += 8;
-            GenEmit(g, "    _DeclareVar %s, 8\n", var->name);
-            GenEmit(g, "    %s_offset = %d\n", var->name, offset);
-        }
+        GenEmit(g, "    _DeclareVar %s, %d\n", var->name, VarSize(g, var));
     }
     
-    // Declare temp variables
-    for (int i = 0; i < temp_count; i++) {
-        offset += 8;
-        GenEmit(g, "    _DeclareVar _t%d, 8\n", i);
-        GenEmit(g, "    _t%d_offset = %d\n", i, offset);
+    size_t nparams = node->children.used;
+    if (nparams > 6) nparams = 6;
+    for (size_t i = 0; i < nparams; i++) {
+        AST_Node *param = node->children.data[i];
+        if (param->type == AST_VAR && param->name)
+            GenEmit(g, "    _StoreVar %s, %s\n", param->name, arg_regs[i]);
     }
     
     GenEmit(g, "\n");
@@ -428,35 +682,91 @@ static void GenProc(Generator *g, AST_Node *node)
     GenEmit(g, "_FuncEnd\n\n");
 }
 
-static void GenProgram(Generator *g, AST_Node *node) 
+static bool LibraryNeedsLink(AST_Node *lib)
+{
+    if (!lib || !lib->str) return false;
+    return strcmp(lib->str, "cmpl_rt") != 0;
+}
+
+static bool ProgramNeedsLink(Generator *g, AST_Node *node)
+{
+    for (size_t i = 0; i < node->children.used; ++i) {
+        AST_Node *decl = node->children.data[i];
+        if (decl->type == AST_LIBRARY && LibraryNeedsLink(decl))
+            return true;
+    }
+    return false;
+}
+
+static void GenProgram(Generator *g, AST_Node *node, bool need_link) 
 {
     GenEmit(g, "; Generated by Jai compiler\n");
     GenEmit(g, "; asmsyntax=fasm\n");
-    GenEmit(g, "include 'runtime/core.asm'\n\n");
+    if (need_link)
+        GenEmit(g, "include 'runtime/core_obj.asm'\n\n");
+    else
+        GenEmit(g, "include 'runtime/core.asm'\n\n");
     
 	for (size_t i = 0; i < node->children.used; ++i) 
 	{
 		AST_Node *decl = node->children.data[i];
+		if (decl->type == AST_LIBRARY) {
+            arena_da_append(g->arena, &g->libraries, decl);
+            GenEmit(g, "; %s :: #%s \"%s\"\n",
+                decl->name,
+                (decl->flags & AST_FLAG_SYSTEM_LIB) ? "system_library" : "library",
+                decl->str ? decl->str : "");
+        }
 		if (decl->type == AST_STRUCT) 
+			GenStruct(g, decl);
+	}
+    
+    // Register foreigns first (so calls resolve)
+	for (size_t i = 0; i < node->children.used; ++i) 
+	{
+		AST_Node *decl = node->children.data[i];
+		if (decl->type == AST_PROC && (decl->flags & AST_FLAG_FOREIGN))
 			GenProc(g, decl);
 	}
+    
+    // extrn for symbols from real shared libs
+    if (need_link) {
+        for (size_t i = 0; i < g->foreigns.count; i++) {
+            ForeignInfo *f = &g->foreigns.items[i];
+            if (f->lib && strcmp(f->lib, "cmpl_rt") != 0)
+                GenEmit(g, "extrn %s\n", f->c_symbol);
+        }
+        GenEmit(g, "\n");
+    }
     
 	for (size_t i = 0; i < node->children.used; ++i) 
 	{
 		AST_Node *decl = node->children.data[i];
-		if (decl->type == AST_PROC) 
+		if (decl->type == AST_PROC && !(decl->flags & AST_FLAG_FOREIGN))
 			GenProc(g, decl);
 	}
+    
+    // Embedded cmpl_rt helpers when used (or always in standalone builds)
+    bool uses_rt = !need_link;
+    for (size_t i = 0; i < g->foreigns.count && !uses_rt; i++) {
+        if (g->foreigns.items[i].lib && strcmp(g->foreigns.items[i].lib, "cmpl_rt") == 0)
+            uses_rt = true;
+    }
+    if (uses_rt) {
+        GenEmit(g, "include 'runtime/arena.asm'\n");
+        GenEmit(g, "include 'runtime/ffi.asm'\n");
+    }
 }
 
 bool Generate(AST_Node *ast, const char *output_path, Arena *arena)
 {
-
     Generator g;
     GenInit(&g, arena);
     
+    bool need_link = ProgramNeedsLink(&g, ast);
+    
     nob_log(NOB_INFO, "Generating assembly code...");
-    GenProgram(&g, ast);
+    GenProgram(&g, ast, need_link);
     
     nob_sb_append_null(&g.sb);
     
@@ -467,14 +777,66 @@ bool Generate(AST_Node *ast, const char *output_path, Arena *arena)
         return false;
     }
     
-    nob_log(NOB_INFO, "Compiling with FASM...");
-    Nob_Cmd cmd = {0};
-    nob_cmd_append(&cmd, "fasm", output_path);
+    // Derive exe path: out/out.asm → out/out
+    char exe_path[4096];
+    snprintf(exe_path, sizeof(exe_path), "%s", output_path);
+    char *dot = strrchr(exe_path, '.');
+    if (dot && strcmp(dot, ".asm") == 0)
+        *dot = '\0';
     
-    if (!nob_cmd_run(&cmd)) 
-	{
-        nob_log(NOB_ERROR, "FASM compilation failed");
-        return false;
+    if (need_link) {
+        // Custom link with proper -rpath
+        char obj_path[4096];
+        snprintf(obj_path, sizeof(obj_path), "%s.o", exe_path);
+        
+        nob_log(NOB_INFO, "Assembling object with FASM...");
+        Nob_Cmd fasm = {0};
+        nob_cmd_append(&fasm, "fasm", output_path, obj_path);
+        if (!nob_cmd_run(&fasm)) {
+            nob_log(NOB_ERROR, "FASM object assembly failed");
+            return false;
+        }
+        
+        // Link with cc + CRT: FASM object exports `main` (see core_obj.asm).
+        nob_log(NOB_INFO, "Linking with cc...");
+        Nob_Cmd link = {0};
+        nob_cmd_append(&link, "cc", "-no-pie", "-o", exe_path, obj_path);
+        
+        for (size_t i = 0; i < g.libraries.count; i++) {
+            AST_Node *lib = g.libraries.items[i];
+            if (!LibraryNeedsLink(lib)) continue;
+            const char *path = lib->str;
+            
+            if (lib->flags & AST_FLAG_SYSTEM_LIB) {
+                const char *name = path;
+                if (strncmp(path, "lib", 3) == 0) name = path + 3;
+                nob_cmd_append(&link, nob_temp_sprintf("-l%s", name));
+            } else {
+                nob_cmd_append(&link, path);
+                const char *slash = strrchr(path, '/');
+                if (slash && slash != path) {
+                    size_t n = (size_t)(slash - path);
+                    nob_cmd_append(&link, nob_temp_sprintf("-Wl,-rpath,%.*s", (int)n, path));
+                }
+            }
+        }
+        /* Vulkan (and friends) come via NEEDED of linked .so — do not hardcode
+         * -lvulkan here: Nix ld does not search /usr/lib by default. */
+        nob_cmd_append(&link, "-lm", "-ldl", "-lpthread",
+            "-Wl,-z,noexecstack");
+        
+        if (!nob_cmd_run(&link)) {
+            nob_log(NOB_ERROR, "link failed");
+            return false;
+        }
+    } else {
+        nob_log(NOB_INFO, "Compiling with FASM...");
+        Nob_Cmd cmd = {0};
+        nob_cmd_append(&cmd, "fasm", output_path);
+        if (!nob_cmd_run(&cmd)) {
+            nob_log(NOB_ERROR, "FASM compilation failed");
+            return false;
+        }
     }
     
     nob_log(NOB_INFO, "Compilation successful!");

@@ -1,0 +1,9 @@
+out/
+*.o
+*.asm.o
+nob.old
+examples/vulkan/libcmpl_vk.so
+examples/c_lib/libadd.so
+.direnv/
+result
+result-*

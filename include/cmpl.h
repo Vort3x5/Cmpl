@@ -7,6 +7,9 @@
 #include <stdbool.h>
 
 #define AST_FLAG_REVERSE 0x1
+#define AST_FLAG_FOREIGN 0x2
+#define AST_FLAG_SYSTEM_LIB 0x4  // #system_library vs #library
+#define AST_FLAG_POINTER 0x8    // AST_TYPE is *T
 
 typedef enum {
 	TOKEN_EOF,
@@ -32,7 +35,11 @@ typedef enum {
     TOKEN_FOR,
     TOKEN_WHILE,
     TOKEN_RETURN,
+    TOKEN_DEFER,
     TOKEN_STRUCT,
+    TOKEN_HASH,
+    TOKEN_DEREF,   // <<  (Jai pointer dereference)
+    TOKEN_FOREIGN_KW, // legacy; prefer #foreign
 	TOKEN_DOT,
 	TOKEN_PLUS,
 	TOKEN_MINUS,
@@ -75,6 +82,7 @@ typedef enum {
 	AST_ID,
 	AST_INDEX,
     AST_RETURN,
+    AST_DEFER,
     AST_IF,
     AST_FOR,
     AST_FOR_RANGE,
@@ -83,6 +91,9 @@ typedef enum {
     AST_FIELD,
 	AST_FIELD_ACCESS,
     AST_TYPE,
+    AST_LIBRARY,   // name :: #library / #system_library "path"
+    AST_ADDR_OF,   // *expr
+    AST_DEREF,     // << expr
 } AST_Type;
 
 typedef struct AST_Node AST_Node;
@@ -123,8 +134,28 @@ typedef struct {
 
 typedef struct {
 	const char *name;
+	size_t offset;
 	size_t size;
+} FieldInfo;
+
+typedef struct {
+	const char *name;
+	size_t size;
+	FieldInfo *fields;
+	size_t field_count;
 } TypeInfo;
+
+typedef struct {
+	const char *name;
+	const char *type_name;
+	int array_len; // 0 = scalar; >0 = [N]type on stack
+} LocalInfo;
+
+typedef struct {
+	const char *jai_name;
+	const char *c_symbol;
+	const char *lib;
+} ForeignInfo;
 
 typedef struct {
 	Nob_String_Builder sb;
@@ -134,6 +165,22 @@ typedef struct {
 		TypeInfo *items;
 		size_t count, capacity;
 	} types;
+	struct {
+		LocalInfo *items;
+		size_t count, capacity;
+	} locals;
+	struct {
+		AST_Node **items;
+		size_t count, capacity;
+	} defers;
+	struct {
+		AST_Node **items; // AST_LIBRARY nodes
+		size_t count, capacity;
+	} libraries;
+	struct {
+		ForeignInfo *items;
+		size_t count, capacity;
+	} foreigns;
 } Generator;
 
 typedef enum {
@@ -196,7 +243,11 @@ typedef struct {
 		[TOKEN_FOR] = "FOR",
 		[TOKEN_WHILE] = "WHILE",
 		[TOKEN_RETURN] = "RETURN",
+		[TOKEN_DEFER] = "DEFER",
 		[TOKEN_STRUCT] = "STRUCT",
+		[TOKEN_HASH] = "HASH",
+		[TOKEN_DEREF] = "DEREF",
+		[TOKEN_FOREIGN_KW] = "FOREIGN_KW",
         [TOKEN_COMMA] = "COMMA",
         [TOKEN_DOT] = "DOT",
         [TOKEN_PLUS] = "PLUS",
@@ -225,6 +276,7 @@ typedef struct {
 		[AST_ID] = "IDENTIFIER",
 		[AST_INDEX] = "INDEX",
 		[AST_RETURN] = "RETURN",
+		[AST_DEFER] = "DEFER",
 		[AST_IF] = "IF",
 		[AST_FOR] = "FOR",
 		[AST_FOR_RANGE] = "FOR_RANGE",
@@ -233,6 +285,9 @@ typedef struct {
 		[AST_FIELD] = "FIELD",
 		[AST_FIELD_ACCESS] = "FIELD_ACCESS",
 		[AST_TYPE] = "TYPE",
+		[AST_LIBRARY] = "LIBRARY",
+		[AST_ADDR_OF] = "ADDR_OF",
+		[AST_DEREF] = "DEREF",
 	};
 
 	static AST_Node *ParseExpression(Parser *parser);
@@ -247,7 +302,6 @@ typedef struct {
 #endif
 
 #ifdef GEN_DEF
-    static void GenExpr(Generator *g, AST_Node *node);
     static void GenStmt(Generator *g, AST_Node *node);
 #endif
 
@@ -266,6 +320,7 @@ Parser* ParserCreate(Lexer* lexer, Arena* arena);
 AST_Node* ParserParseProgram(Parser* parser);
 bool ParserHadError(Parser* parser);
 void ASTArrayInit(AST_Array *array);
+void ASTArrayPush(AST_Array *array, AST_Node *node, Arena *arena);
 void ASTPrintNode(AST_Node* node, int depth);
 void ASTPrintProgram(AST_Node* program);
 

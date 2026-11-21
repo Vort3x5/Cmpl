@@ -91,7 +91,7 @@ test_function_params :: () -> int {
     return x;
 }
 
-// Test 9: Multiple function calls (120)
+// Test 9: Multiple function calls (90 = 30+30+30)
 multiply :: (a: int, b: int) -> int {
     result := 0;
     i := 0;
@@ -109,7 +109,7 @@ test_multiple_calls :: () -> int {
     return a + b + c;
 }
 
-// Test 10: Complex expressions (150)
+// Test 10: Complex expressions (110 = 50+30+30)
 test_complex_expr :: () -> int {
     a := 5;
     b := 10;
@@ -181,7 +181,7 @@ test_fib :: () -> int {
     return fib(11);
 }
 
-// Test 14: Loop with conditional (36)
+// Test 14: Loop with conditional (30 = 6+7+8+9)
 test_loop_conditional :: () -> int {
     sum := 0;
     i := 0;
@@ -208,6 +208,7 @@ test_assignments :: () -> int {
 }
 
 // Main test runner
+// Full sum is 1019; process exit status is low 8 bits => 251
 main :: () -> int {
     t1 := test_arithmetic();           // 15
     t2 := test_operations();           // 50
@@ -217,12 +218,12 @@ main :: () -> int {
     t6 := test_comparisons();          // 3
     t7 := test_nested_loops();         // 25
     t8 := test_function_params();      // 30
-    t9 := test_multiple_calls();       // 120
-    t10 := test_complex_expr();        // 150
+    t9 := test_multiple_calls();       // 90
+    t10 := test_complex_expr();        // 110
     t11 := test_nested_conditionals(); // 200
     t12 := test_factorial();           // 120
     t13 := test_fib();                 // 89
-    t14 := test_loop_conditional();    // 36
+    t14 := test_loop_conditional();    // 30
     t15 := test_assignments();         // 60
     
     total := t1 + t2;
@@ -240,5 +241,5 @@ main :: () -> int {
     total = total + t14;
     total = total + t15;
     
-    return total;  // Expected: 1095
+    return total;  // Expected: 1019 (exit status 251)
 }
