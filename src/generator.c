@@ -21,12 +21,12 @@ static void GenInit(Generator *g, Arena *a)
     
     // Builtins
     TypeInfo builtins[] = {
-        { .name = "int", .size = 8 },
-        { .name = "s64", .size = 8 },
-        { .name = "u64", .size = 8 },
-        { .name = "u32", .size = 4 },
-        { .name = "u16", .size = 2 },
-        { .name = "u8",  .size = 1 },
+        { .name = "int", .size = 8, .align = 8 },
+        { .name = "s64", .size = 8, .align = 8 },
+        { .name = "u64", .size = 8, .align = 8 },
+        { .name = "u32", .size = 4, .align = 4 },
+        { .name = "u16", .size = 2, .align = 2 },
+        { .name = "u8",  .size = 1, .align = 1 },
     };
     for (size_t i = 0; i < sizeof(builtins)/sizeof(builtins[0]); i++)
         arena_da_append(g->arena, &g->types, builtins[i]);
@@ -123,7 +123,9 @@ static void GenEmit(Generator *g, const char *fmt, ...)
 	va_end(args);
 }
 
-#define TEMP_SLOTS 64
+/* Reserved compiler locals (not user temps). */
+#define RESERVED_RET "_ret"
+#define RESERVED_BOUND "_for_bound"
 
 static const char *ForeignSymbol(Generator *g, const char *jai_name)
 {
@@ -152,6 +154,51 @@ static void TacLoadOperand(Generator *g, const char *reg, const char *operand)
         GenEmit(g, "    _LoadVar %s, %s\n", reg, operand);
 }
 
+static size_t TypeAlignOf(Generator *g, AST_Node *type_node)
+{
+    if (!type_node) return 8;
+    if (type_node->flags & AST_FLAG_POINTER) return 8;
+    int sz = GetTypeSize(g, type_node->name);
+    if (sz <= 1) return 1;
+    if (sz == 2) return 2;
+    if (sz <= 4) return 4;
+    TypeInfo *info = FindType(g, type_node->name);
+    if (info && info->align) return info->align;
+    return 8;
+}
+
+static size_t AlignUp(size_t off, size_t align)
+{
+    if (align == 0) return off;
+    return (off + align - 1) & ~(align - 1);
+}
+
+static void EmitFieldLoad(Generator *g, const char *var, FieldInfo *field)
+{
+    size_t sz = field->size ? field->size : 8;
+    if (sz == 1)
+        GenEmit(g, "    movzx rax, byte [rbp - %s_offset + %zu]\n", var, field->offset);
+    else if (sz == 2)
+        GenEmit(g, "    movzx rax, word [rbp - %s_offset + %zu]\n", var, field->offset);
+    else if (sz == 4)
+        GenEmit(g, "    mov eax, dword [rbp - %s_offset + %zu]\n", var, field->offset);
+    else
+        GenEmit(g, "    mov rax, [rbp - %s_offset + %zu]\n", var, field->offset);
+}
+
+static void EmitFieldStore(Generator *g, const char *var, FieldInfo *field)
+{
+    size_t sz = field->size ? field->size : 8;
+    if (sz == 1)
+        GenEmit(g, "    mov byte [rbp - %s_offset + %zu], al\n", var, field->offset);
+    else if (sz == 2)
+        GenEmit(g, "    mov word [rbp - %s_offset + %zu], ax\n", var, field->offset);
+    else if (sz == 4)
+        GenEmit(g, "    mov dword [rbp - %s_offset + %zu], eax\n", var, field->offset);
+    else
+        GenEmit(g, "    mov [rbp - %s_offset + %zu], rax\n", var, field->offset);
+}
+
 /* Flat TAC emit: temps live in stack slots; no push/pop around calls. */
 static void EmitTACInst(Generator *g, TAC_Inst *inst)
 {
@@ -162,96 +209,108 @@ static void EmitTACInst(Generator *g, TAC_Inst *inst)
         TacLoadOperand(g, arg_regs[idx], inst->src1);
         break;
     }
+    case TAC_LEA:
+        GenEmit(g, "    lea rax, [rbp - %s_offset]\n", inst->src1);
+        GenEmit(g, "    _StoreVar %s, rax\n", inst->dest);
+        break;
+    case TAC_LOAD:
+        TacLoadOperand(g, "rax", inst->src1);
+        GenEmit(g, "    mov rax, [rax]\n");
+        GenEmit(g, "    _StoreVar %s, rax\n", inst->dest);
+        break;
+    case TAC_FIELD: {
+        TypeInfo *type = FindType(g, LocalsGetType(g, inst->src1));
+        FieldInfo *field = FindField(type, inst->src2);
+        if (!field) {
+            nob_log(NOB_ERROR, "Unknown field %s.%s", inst->src1, inst->src2);
+            break;
+        }
+        EmitFieldLoad(g, inst->src1, field);
+        GenEmit(g, "    _StoreVar %s, rax\n", inst->dest);
+        break;
+    }
+    case TAC_INDEX: {
+        LocalInfo *loc = LocalsFind(g, inst->src1);
+        int elem_size = GetTypeSize(g, loc ? loc->type_name : "int");
+        TacLoadOperand(g, "rax", inst->src2);
+        GenEmit(g, "    mov rcx, rax\n");
+        GenEmit(g, "    imul rcx, %d\n", elem_size);
+        GenEmit(g, "    mov rax, [rbp + rcx - %s_offset]\n", inst->src1);
+        GenEmit(g, "    _StoreVar %s, rax\n", inst->dest);
+        break;
+    }
+    case TAC_NEG:
+        TacLoadOperand(g, "rax", inst->src2);
+        GenEmit(g, "    neg rax\n");
+        GenEmit(g, "    _StoreVar %s, rax\n", inst->dest);
+        break;
+    case TAC_NOT:
+        TacLoadOperand(g, "rax", inst->src2);
+        GenEmit(g, "    test rax, rax\n");
+        GenEmit(g, "    mov rax, 0\n");
+        GenEmit(g, "    sete al\n");
+        GenEmit(g, "    _StoreVar %s, rax\n", inst->dest);
+        break;
     case TAC_BINOP: {
         const char *op = inst->op ? inst->op : "+";
-        if (strcmp(op, "lea") == 0) {
-            GenEmit(g, "    lea rax, [rbp - %s_offset]\n", inst->src1);
-            GenEmit(g, "    _StoreVar %s, rax\n", inst->dest);
-        } else if (strcmp(op, "load") == 0) {
-            TacLoadOperand(g, "rax", inst->src1);
-            GenEmit(g, "    mov rax, [rax]\n");
-            GenEmit(g, "    _StoreVar %s, rax\n", inst->dest);
-        } else if (strcmp(op, "field") == 0) {
-            const char *var = inst->src1;
-            const char *fname = inst->src2;
-            TypeInfo *type = FindType(g, LocalsGetType(g, var));
-            FieldInfo *field = FindField(type, fname);
-            if (!field) {
-                nob_log(NOB_ERROR, "Unknown field %s.%s", var, fname);
-                break;
-            }
-            GenEmit(g, "    _LoadField rax, %s, %zu\n", var, field->offset);
-            GenEmit(g, "    _StoreVar %s, rax\n", inst->dest);
-        } else if (strcmp(op, "index") == 0) {
-            LocalInfo *loc = LocalsFind(g, inst->src1);
-            int elem_size = GetTypeSize(g, loc ? loc->type_name : "int");
-            TacLoadOperand(g, "rax", inst->src2);
-            GenEmit(g, "    mov rcx, rax\n");
-            GenEmit(g, "    imul rcx, %d\n", elem_size);
-            GenEmit(g, "    mov rax, [rbp + rcx - %s_offset]\n", inst->src1);
-            GenEmit(g, "    _StoreVar %s, rax\n", inst->dest);
-        } else if (strcmp(op, "neg") == 0) {
-            TacLoadOperand(g, "rax", inst->src2);
-            GenEmit(g, "    neg rax\n");
-            GenEmit(g, "    _StoreVar %s, rax\n", inst->dest);
-        } else if (strcmp(op, "!") == 0) {
-            TacLoadOperand(g, "rax", inst->src2);
-            GenEmit(g, "    test rax, rax\n");
-            GenEmit(g, "    mov rax, 0\n");
-            GenEmit(g, "    sete al\n");
-            GenEmit(g, "    _StoreVar %s, rax\n", inst->dest);
+        TacLoadOperand(g, "rax", inst->src1);
+        TacLoadOperand(g, "rbx", inst->src2);
+        if (strcmp(op, "+") == 0) GenEmit(g, "    add rax, rbx\n");
+        else if (strcmp(op, "-") == 0) GenEmit(g, "    sub rax, rbx\n");
+        else if (strcmp(op, "*") == 0) GenEmit(g, "    imul rax, rbx\n");
+        else if (strcmp(op, "<<") == 0) {
+            GenEmit(g, "    mov rcx, rbx\n");
+            GenEmit(g, "    shl rax, cl\n");
+        } else if (strcmp(op, ">>") == 0) {
+            GenEmit(g, "    mov rcx, rbx\n");
+            GenEmit(g, "    sar rax, cl\n");
+        } else if (strcmp(op, "==") == 0) {
+            GenEmit(g, "    cmp rax, rbx\n    mov rax, 0\n    sete al\n");
+        } else if (strcmp(op, "!=") == 0) {
+            GenEmit(g, "    cmp rax, rbx\n    mov rax, 0\n    setne al\n");
+        } else if (strcmp(op, "<") == 0) {
+            GenEmit(g, "    cmp rax, rbx\n    mov rax, 0\n    setl al\n");
+        } else if (strcmp(op, ">") == 0) {
+            GenEmit(g, "    cmp rax, rbx\n    mov rax, 0\n    setg al\n");
+        } else if (strcmp(op, "<=") == 0) {
+            GenEmit(g, "    cmp rax, rbx\n    mov rax, 0\n    setle al\n");
+        } else if (strcmp(op, ">=") == 0) {
+            GenEmit(g, "    cmp rax, rbx\n    mov rax, 0\n    setge al\n");
         } else {
-            TacLoadOperand(g, "rax", inst->src1);
-            TacLoadOperand(g, "rbx", inst->src2);
-            if (strcmp(op, "+") == 0) GenEmit(g, "    add rax, rbx\n");
-            else if (strcmp(op, "-") == 0) GenEmit(g, "    sub rax, rbx\n");
-            else if (strcmp(op, "*") == 0) GenEmit(g, "    imul rax, rbx\n");
-            else if (strcmp(op, "==") == 0) {
-                GenEmit(g, "    cmp rax, rbx\n    mov rax, 0\n    sete al\n");
-            } else if (strcmp(op, "!=") == 0) {
-                GenEmit(g, "    cmp rax, rbx\n    mov rax, 0\n    setne al\n");
-            } else if (strcmp(op, "<") == 0) {
-                GenEmit(g, "    cmp rax, rbx\n    mov rax, 0\n    setl al\n");
-            } else if (strcmp(op, ">") == 0) {
-                GenEmit(g, "    cmp rax, rbx\n    mov rax, 0\n    setg al\n");
-            } else if (strcmp(op, "<=") == 0) {
-                GenEmit(g, "    cmp rax, rbx\n    mov rax, 0\n    setle al\n");
-            } else if (strcmp(op, ">=") == 0) {
-                GenEmit(g, "    cmp rax, rbx\n    mov rax, 0\n    setge al\n");
-            } else {
-                nob_log(NOB_ERROR, "Unsupported TAC binop: %s", op);
-            }
-            GenEmit(g, "    _StoreVar %s, rax\n", inst->dest);
+            nob_log(NOB_ERROR, "Unsupported TAC binop: %s", op);
         }
+        GenEmit(g, "    _StoreVar %s, rax\n", inst->dest);
         break;
     }
-    case TAC_COPY: {
-        if (inst->op && strcmp(inst->op, "store_field") == 0) {
-            TacLoadOperand(g, "rax", inst->src1);
-            TypeInfo *type = FindType(g, LocalsGetType(g, inst->dest));
-            FieldInfo *field = FindField(type, inst->src2);
-            if (!field) {
-                nob_log(NOB_ERROR, "Unknown field store %s.%s", inst->dest, inst->src2);
-                break;
-            }
-            GenEmit(g, "    _StoreField %s, %zu, rax\n", inst->dest, field->offset);
-        } else if (inst->op && strcmp(inst->op, "store_index") == 0) {
-            LocalInfo *loc = LocalsFind(g, inst->dest);
-            int elem_size = GetTypeSize(g, loc ? loc->type_name : "int");
-            TacLoadOperand(g, "rax", inst->src1);
-            TacLoadOperand(g, "rcx", inst->src2);
-            GenEmit(g, "    imul rcx, %d\n", elem_size);
-            GenEmit(g, "    mov [rbp + rcx - %s_offset], rax\n", inst->dest);
-        } else if (inst->op && strcmp(inst->op, "store_deref") == 0) {
-            TacLoadOperand(g, "rax", inst->src1);
-            TacLoadOperand(g, "rbx", inst->dest);
-            GenEmit(g, "    mov [rbx], rax\n");
-        } else {
-            TacLoadOperand(g, "rax", inst->src1);
-            GenEmit(g, "    _StoreVar %s, rax\n", inst->dest);
+    case TAC_STORE_FIELD: {
+        TacLoadOperand(g, "rax", inst->src1);
+        TypeInfo *type = FindType(g, LocalsGetType(g, inst->dest));
+        FieldInfo *field = FindField(type, inst->src2);
+        if (!field) {
+            nob_log(NOB_ERROR, "Unknown field store %s.%s", inst->dest, inst->src2);
+            break;
         }
+        EmitFieldStore(g, inst->dest, field);
         break;
     }
+    case TAC_STORE_INDEX: {
+        LocalInfo *loc = LocalsFind(g, inst->dest);
+        int elem_size = GetTypeSize(g, loc ? loc->type_name : "int");
+        TacLoadOperand(g, "rax", inst->src1);
+        TacLoadOperand(g, "rcx", inst->src2);
+        GenEmit(g, "    imul rcx, %d\n", elem_size);
+        GenEmit(g, "    mov [rbp + rcx - %s_offset], rax\n", inst->dest);
+        break;
+    }
+    case TAC_STORE_DEREF:
+        TacLoadOperand(g, "rax", inst->src1);
+        TacLoadOperand(g, "rbx", inst->dest);
+        GenEmit(g, "    mov [rbx], rax\n");
+        break;
+    case TAC_COPY:
+        TacLoadOperand(g, "rax", inst->src1);
+        GenEmit(g, "    _StoreVar %s, rax\n", inst->dest);
+        break;
     case TAC_CALL: {
         const char *sym = ForeignSymbol(g, inst->src1);
         if (sym)
@@ -262,11 +321,10 @@ static void EmitTACInst(Generator *g, TAC_Inst *inst)
             GenEmit(g, "    _StoreVar %s, rax\n", inst->dest);
         break;
     }
-    case TAC_RETURN: {
+    case TAC_RETURN:
         TacLoadOperand(g, "rax", inst->src1 ? inst->src1 : "0");
         GenEmit(g, "    _ReturnRax\n");
         break;
-    }
     default:
         break;
     }
@@ -316,17 +374,15 @@ static void GenEmitDefers(Generator *g, size_t from)
 
 static void GenReturn(Generator *g, AST_Node *node)
 {
-    // Evaluate return value first, then run defers, then exit.
+    /* Keep return value in a stack slot so defer calls cannot break SSE ABI. */
     if (!node->right) {
         GenEmit(g, "    mov rax, 0\n");
     } else {
-        GenEmit(g, "    ");
         GenExprStmt(g, node->right);
-        GenEmit(g, "\n");
     }
-    GenEmit(g, "    push rax\n");
+    GenEmit(g, "    _StoreVar %s, rax\n", RESERVED_RET);
     GenEmitDefers(g, 0);
-    GenEmit(g, "    pop rax\n");
+    GenEmit(g, "    _LoadVar rax, %s\n", RESERVED_RET);
     GenEmit(g, "    _ReturnRax\n");
 }
 
@@ -363,45 +419,41 @@ static void GenWhile(Generator *g, AST_Node *node)
 
 static void GenFor(Generator *g, AST_Node *node)
 {
-    // Jai: `for i: a..b` is inclusive on both ends (The_Way_to_Jai §15 / §18).
+    /* Jai: `for i: a..b` inclusive. Bound kept in slot (no push) so call-in-range is SSE-safe. */
     const char *it = node->name ? node->name : "it";
     bool reverse = (node->flags & AST_FLAG_REVERSE) != 0;
-    
+
     if (reverse) {
-        // for < i: start..end  =>  i = end; while i >= start; body; i -= 1
-        GenEmit(g, "    ");
+        GenExprStmt(g, node->left);
+        GenEmit(g, "    _StoreVar %s, rax\n", RESERVED_BOUND);
         GenExprStmt(g, node->right);
-        GenEmit(g, "\n    _StoreVar %s, rax\n", it);
-        
+        GenEmit(g, "    _StoreVar %s, rax\n", it);
+
         GenEmit(g, "    _BeginWhile\n");
         GenEmit(g, "    _LoadVar rax, %s\n", it);
-        GenEmit(g, "    push rax\n    ");
-        GenExprStmt(g, node->left);
-        GenEmit(g, "\n    mov rbx, rax\n    pop rax\n");
+        GenEmit(g, "    _LoadVar rbx, %s\n", RESERVED_BOUND);
         GenEmit(g, "    cmp rax, rbx\n");
         GenEmit(g, "    mov rax, 0\n");
         GenEmit(g, "    setge al\n");
         GenEmit(g, "    _WhileTest\n");
     } else {
-        // for i: start..end  =>  i = start; while i <= end; body; i += 1
-        GenEmit(g, "    ");
+        GenExprStmt(g, node->right);
+        GenEmit(g, "    _StoreVar %s, rax\n", RESERVED_BOUND);
         GenExprStmt(g, node->left);
-        GenEmit(g, "\n    _StoreVar %s, rax\n", it);
-        
+        GenEmit(g, "    _StoreVar %s, rax\n", it);
+
         GenEmit(g, "    _BeginWhile\n");
         GenEmit(g, "    _LoadVar rax, %s\n", it);
-        GenEmit(g, "    push rax\n    ");
-        GenExprStmt(g, node->right);
-        GenEmit(g, "\n    mov rbx, rax\n    pop rax\n");
+        GenEmit(g, "    _LoadVar rbx, %s\n", RESERVED_BOUND);
         GenEmit(g, "    cmp rax, rbx\n");
         GenEmit(g, "    mov rax, 0\n");
         GenEmit(g, "    setle al\n");
         GenEmit(g, "    _WhileTest\n");
     }
-    
+
     if (node->body)
         GenStmt(g, node->body);
-    
+
     if (reverse) {
         GenEmit(g, "    _LoadVar rax, %s\n", it);
         GenEmit(g, "    sub rax, 1\n");
@@ -411,7 +463,7 @@ static void GenFor(Generator *g, AST_Node *node)
         GenEmit(g, "    add rax, 1\n");
         GenEmit(g, "    _StoreVar %s, rax\n", it);
     }
-    
+
     GenEmit(g, "    _EndWhile\n");
 }
 
@@ -431,6 +483,7 @@ static void GenStruct(Generator *g, AST_Node *node)
     
     FieldInfo *fields = arena_alloc(g->arena, field_count * sizeof(FieldInfo));
     size_t total_size = 0;
+    size_t max_align = 1;
     size_t fi = 0;
     
     for (size_t i = 0; i < node->children.used; i++) 
@@ -439,17 +492,26 @@ static void GenStruct(Generator *g, AST_Node *node)
         if (field->type != AST_FIELD || !field->name || !field->right) 
             continue;
         
-        size_t fsize = (size_t)GetTypeSize(g, field->right->name);
+        size_t falign = TypeAlignOf(g, field->right);
+        size_t fsize;
+        if (field->right->flags & AST_FLAG_POINTER)
+            fsize = 8;
+        else
+            fsize = (size_t)GetTypeSize(g, field->right->name);
+        total_size = AlignUp(total_size, falign);
         fields[fi].name = field->name;
         fields[fi].offset = total_size;
         fields[fi].size = fsize;
         total_size += fsize;
+        if (falign > max_align) max_align = falign;
         fi++;
     }
+    total_size = AlignUp(total_size, max_align);
     
     TypeInfo info = {
         .name = node->name,
         .size = total_size,
+        .align = max_align,
         .fields = fields,
         .field_count = fi,
     };
@@ -593,8 +655,12 @@ static void GenProc(Generator *g, AST_Node *node)
     int locals_size = 0;
     for (size_t i = 0; i < all_vars.used; i++)
         locals_size += VarSize(g, all_vars.data[i]);
-    /* Reserve flat temp slots for TAC (replaces push/pop in expressions). */
-    locals_size += TEMP_SLOTS * 8;
+    /* Reserved slots + only as many TAC temps as this body needs. */
+    int max_temp = TACMaxTempsInNode(node->body, g->arena);
+    int ntemps = max_temp + 1;
+    if (ntemps < 0) ntemps = 0;
+    locals_size += 16; /* _ret + _for_bound */
+    locals_size += ntemps * 8;
     
     if (locals_size % 16 != 0)
         locals_size += 16 - (locals_size % 16);
@@ -605,7 +671,9 @@ static void GenProc(Generator *g, AST_Node *node)
         AST_Node *var = all_vars.data[i];
         GenEmit(g, "    _DeclareVar %s, %d\n", var->name, VarSize(g, var));
     }
-    for (int t = 0; t < TEMP_SLOTS; t++)
+    GenEmit(g, "    _DeclareVar %s, 8\n", RESERVED_RET);
+    GenEmit(g, "    _DeclareVar %s, 8\n", RESERVED_BOUND);
+    for (int t = 0; t < ntemps; t++)
         GenEmit(g, "    _DeclareVar _t%d, 8\n", t);
     
     size_t nparams = node->children.used;

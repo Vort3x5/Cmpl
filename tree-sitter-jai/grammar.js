@@ -198,8 +198,9 @@ module.exports = grammar({
       const table = [
         [prec.left, 1, choice('==', '!=')],
         [prec.left, 2, choice('<', '<=', '>', '>=')],
-        [prec.left, 3, choice('+', '-')],
-        [prec.left, 4, choice('*', '/', '%')],
+        [prec.left, 3, choice('<<', '>>')],
+        [prec.left, 4, choice('+', '-')],
+        [prec.left, 5, choice('*', '/', '%')],
       ];
 
       return choice(...table.map(([assoc, precedence, operator]) =>

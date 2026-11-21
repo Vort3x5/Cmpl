@@ -81,17 +81,12 @@ char *ExprToTAC(TAC_Builder *tb, AST_Node *node)
         if (IsUnaryBinOp(node)) {
             char *operand = ExprToTAC(tb, node->right);
             char *result = NewTemp(tb);
-            TAC_Inst *inst = TACCreate(tb, TAC_BINOP);
-            inst->dest = result;
-            inst->src1 = arena_strdup(tb->arena, "0");
-            inst->src2 = operand;
-            /* Encode unary as 0 - x or !x via op name with 'u' prefix for ! */
+            TAC_Op kind = TAC_NEG;
             if (node->name && strcmp(node->name, "!") == 0)
-                inst->op = arena_strdup(tb->arena, "!");
-            else if (node->name && strcmp(node->name, "-") == 0)
-                inst->op = arena_strdup(tb->arena, "neg");
-            else
-                inst->op = arena_strdup(tb->arena, node->name ? node->name : "-");
+                kind = TAC_NOT;
+            TAC_Inst *inst = TACCreate(tb, kind);
+            inst->dest = result;
+            inst->src2 = operand;
             TACAppend(tb, inst);
             return result;
         }
@@ -114,10 +109,14 @@ char *ExprToTAC(TAC_Builder *tb, AST_Node *node)
         size_t nargs = node->children.used;
         if (nargs > MAX_CALL_ARGS)
             nargs = MAX_CALL_ARGS;
+        /* Evaluate every argument fully first (nested calls included), then
+         * load argument registers — otherwise inner call clobbers rdi/rsi. */
+        char *args[MAX_CALL_ARGS];
+        for (size_t i = 0; i < nargs; i++)
+            args[i] = ExprToTAC(tb, node->children.data[i]);
         for (size_t i = 0; i < nargs; i++) {
-            char *arg = ExprToTAC(tb, node->children.data[i]);
             TAC_Inst *p = TACCreate(tb, TAC_PARAM);
-            p->src1 = arg;
+            p->src1 = args[i];
             char idx[8];
             snprintf(idx, sizeof(idx), "%zu", i);
             p->op = arena_strdup(tb->arena, idx);
@@ -137,10 +136,9 @@ char *ExprToTAC(TAC_Builder *tb, AST_Node *node)
             return NULL;
         }
         char *result = NewTemp(tb);
-        TAC_Inst *inst = TACCreate(tb, TAC_BINOP);
+        TAC_Inst *inst = TACCreate(tb, TAC_LEA);
         inst->dest = result;
         inst->src1 = arena_strdup(tb->arena, node->right->name);
-        inst->op = arena_strdup(tb->arena, "lea");
         TACAppend(tb, inst);
         return result;
     }
@@ -148,26 +146,23 @@ char *ExprToTAC(TAC_Builder *tb, AST_Node *node)
     case AST_DEREF: {
         char *ptr = ExprToTAC(tb, node->right);
         char *result = NewTemp(tb);
-        TAC_Inst *inst = TACCreate(tb, TAC_BINOP);
+        TAC_Inst *inst = TACCreate(tb, TAC_LOAD);
         inst->dest = result;
         inst->src1 = ptr;
-        inst->op = arena_strdup(tb->arena, "load");
         TACAppend(tb, inst);
         return result;
     }
 
     case AST_FIELD_ACCESS: {
-        /* Leave as special: emit via generator helper — store name in dest pattern */
         if (!node->left || node->left->type != AST_ID) {
             nob_log(NOB_ERROR, "TAC: only var.field supported");
             return NULL;
         }
         char *result = NewTemp(tb);
-        TAC_Inst *inst = TACCreate(tb, TAC_BINOP);
+        TAC_Inst *inst = TACCreate(tb, TAC_FIELD);
         inst->dest = result;
         inst->src1 = arena_strdup(tb->arena, node->left->name);
-        inst->src2 = arena_strdup(tb->arena, node->name); /* field name */
-        inst->op = arena_strdup(tb->arena, "field");
+        inst->src2 = arena_strdup(tb->arena, node->name);
         TACAppend(tb, inst);
         return result;
     }
@@ -179,11 +174,10 @@ char *ExprToTAC(TAC_Builder *tb, AST_Node *node)
         }
         char *idx = ExprToTAC(tb, node->right);
         char *result = NewTemp(tb);
-        TAC_Inst *inst = TACCreate(tb, TAC_BINOP);
+        TAC_Inst *inst = TACCreate(tb, TAC_INDEX);
         inst->dest = result;
         inst->src1 = arena_strdup(tb->arena, node->left->name);
         inst->src2 = idx;
-        inst->op = arena_strdup(tb->arena, "index");
         TACAppend(tb, inst);
         return result;
     }
@@ -205,26 +199,23 @@ void StmtToTAC(TAC_Builder *tb, AST_Node *node)
             break;
         char *src = ExprToTAC(tb, node->right);
         if (node->left && node->left->type == AST_FIELD_ACCESS) {
-            TAC_Inst *inst = TACCreate(tb, TAC_COPY);
+            TAC_Inst *inst = TACCreate(tb, TAC_STORE_FIELD);
             inst->dest = arena_strdup(tb->arena, node->left->left->name);
             inst->src1 = src;
             inst->src2 = arena_strdup(tb->arena, node->left->name);
-            inst->op = arena_strdup(tb->arena, "store_field");
             TACAppend(tb, inst);
         } else if (node->left && node->left->type == AST_INDEX) {
             char *idx = ExprToTAC(tb, node->left->right);
-            TAC_Inst *inst = TACCreate(tb, TAC_COPY);
+            TAC_Inst *inst = TACCreate(tb, TAC_STORE_INDEX);
             inst->dest = arena_strdup(tb->arena, node->left->left->name);
             inst->src1 = src;
             inst->src2 = idx;
-            inst->op = arena_strdup(tb->arena, "store_index");
             TACAppend(tb, inst);
         } else if (node->left && node->left->type == AST_DEREF) {
             char *ptr = ExprToTAC(tb, node->left->right);
-            TAC_Inst *inst = TACCreate(tb, TAC_COPY);
+            TAC_Inst *inst = TACCreate(tb, TAC_STORE_DEREF);
             inst->dest = ptr;
             inst->src1 = src;
-            inst->op = arena_strdup(tb->arena, "store_deref");
             TACAppend(tb, inst);
         } else {
             TAC_Inst *inst = TACCreate(tb, TAC_COPY);
@@ -236,7 +227,7 @@ void StmtToTAC(TAC_Builder *tb, AST_Node *node)
     }
 
     case AST_RETURN: {
-        char *src = node->right ? ExprToTAC(tb, node->right) : "0";
+        char *src = node->right ? ExprToTAC(tb, node->right) : arena_strdup(tb->arena, "0");
         TAC_Inst *inst = TACCreate(tb, TAC_RETURN);
         inst->src1 = src;
         TACAppend(tb, inst);
@@ -244,7 +235,7 @@ void StmtToTAC(TAC_Builder *tb, AST_Node *node)
     }
 
     case AST_CALL: {
-        ExprToTAC(tb, node); /* side-effect call; result temp unused */
+        ExprToTAC(tb, node);
         break;
     }
 
@@ -252,7 +243,6 @@ void StmtToTAC(TAC_Builder *tb, AST_Node *node)
     case AST_WHILE:
     case AST_FOR_RANGE:
     case AST_DEFER:
-        /* Handled by generator control-flow wrappers */
         break;
 
     case AST_BLOCK:
@@ -277,4 +267,78 @@ TAC_Inst *FuncBodyToTAC(AST_Node *body, Arena *arena)
         StmtToTAC(&tb, body);
 
     return tb.head;
+}
+
+static int MaxInt(int a, int b)
+{
+    return a > b ? a : b;
+}
+
+/* Highest _tN index needed by any expression/statement in this subtree. */
+int TACMaxTempsInNode(AST_Node *node, Arena *arena)
+{
+    if (!node)
+        return -1;
+
+    int max_t = -1;
+
+    switch (node->type) {
+    case AST_ASSIGNMENT:
+    case AST_RETURN:
+    case AST_CALL: {
+        TAC_Builder tb;
+        TACInit(&tb, arena);
+        if (node->type == AST_ASSIGNMENT || node->type == AST_RETURN)
+            StmtToTAC(&tb, node);
+        else
+            ExprToTAC(&tb, node);
+        max_t = MaxInt(max_t, TACGetMaxTemp(tb.head));
+        max_t = MaxInt(max_t, tb.temp_count - 1);
+        break;
+    }
+    case AST_IF:
+        if (node->left) {
+            TAC_Builder tb;
+            TACInit(&tb, arena);
+            ExprToTAC(&tb, node->left);
+            max_t = MaxInt(max_t, tb.temp_count - 1);
+        }
+        max_t = MaxInt(max_t, TACMaxTempsInNode(node->body, arena));
+        max_t = MaxInt(max_t, TACMaxTempsInNode(node->right, arena));
+        break;
+    case AST_WHILE:
+        if (node->left) {
+            TAC_Builder tb;
+            TACInit(&tb, arena);
+            ExprToTAC(&tb, node->left);
+            max_t = MaxInt(max_t, tb.temp_count - 1);
+        }
+        max_t = MaxInt(max_t, TACMaxTempsInNode(node->body, arena));
+        break;
+    case AST_FOR_RANGE:
+        if (node->left) {
+            TAC_Builder tb;
+            TACInit(&tb, arena);
+            ExprToTAC(&tb, node->left);
+            max_t = MaxInt(max_t, tb.temp_count - 1);
+        }
+        if (node->right) {
+            TAC_Builder tb;
+            TACInit(&tb, arena);
+            ExprToTAC(&tb, node->right);
+            max_t = MaxInt(max_t, tb.temp_count - 1);
+        }
+        max_t = MaxInt(max_t, TACMaxTempsInNode(node->body, arena));
+        break;
+    case AST_DEFER:
+        max_t = MaxInt(max_t, TACMaxTempsInNode(node->body, arena));
+        break;
+    case AST_BLOCK:
+        for (size_t i = 0; i < node->children.used; i++)
+            max_t = MaxInt(max_t, TACMaxTempsInNode(node->children.data[i], arena));
+        break;
+    default:
+        break;
+    }
+    return max_t;
 }

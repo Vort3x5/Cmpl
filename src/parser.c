@@ -335,9 +335,28 @@ static AST_Node *ParseTerm(Parser *parser)
     return expr;
 }
 
-static AST_Node *ParseComparison(Parser *parser) 
+static AST_Node *ParseShift(Parser *parser)
 {
     AST_Node *expr = ParseTerm(parser);
+
+    while (ParserMatch(parser, TOKEN_SHL) || ParserMatch(parser, TOKEN_SHR))
+    {
+        Token operator = parser->prev;
+        AST_Node *right = ParseTerm(parser);
+
+        AST_Node *node = ASTNodeCreate(parser, AST_BIN_OP);
+        node->name = arena_strdup(parser->arena, operator.lexeme);
+        node->left = expr;
+        node->right = right;
+        expr = node;
+    }
+
+    return expr;
+}
+
+static AST_Node *ParseComparison(Parser *parser) 
+{
+    AST_Node *expr = ParseShift(parser);
     
     while (ParserMatch(parser, TOKEN_GREATER) || ParserMatch(parser, TOKEN_GREATER_EQ) ||
            ParserMatch(parser, TOKEN_LESS) || ParserMatch(parser, TOKEN_LESS_EQ)) 

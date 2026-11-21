@@ -338,7 +338,12 @@ Token LexerNextToken(Lexer* lexer)
 			{
                 LexerNextC(lexer);
                 return LexerMakeToken(lexer, TOKEN_LESS_EQ, "<=", start_line, start_column);
-            } 
+            }
+			else if (LexerPeek(lexer) == '<')
+			{
+				LexerNextC(lexer);
+				return LexerMakeToken(lexer, TOKEN_SHL, "<<", start_line, start_column);
+			}
 			else 
                 return LexerMakeToken(lexer, TOKEN_LESS, "<", start_line, start_column);
             
@@ -347,7 +352,12 @@ Token LexerNextToken(Lexer* lexer)
 			{
                 LexerNextC(lexer);
                 return LexerMakeToken(lexer, TOKEN_GREATER_EQ, ">=", start_line, start_column);
-            } 
+            }
+			else if (LexerPeek(lexer) == '>')
+			{
+				LexerNextC(lexer);
+				return LexerMakeToken(lexer, TOKEN_SHR, ">>", start_line, start_column);
+			}
 			else 
                 return LexerMakeToken(lexer, TOKEN_GREATER, ">", start_line, start_column);
     }

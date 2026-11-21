@@ -48,8 +48,10 @@ typedef enum {
 	TOKEN_NOT,
 	TOKEN_EQ,
 	TOKEN_NOT_EQ,
-	TOKEN_LESS_EQ,
+    TOKEN_LESS_EQ,
 	TOKEN_LESS,
+	TOKEN_SHL,       /* << */
+	TOKEN_SHR,       /* >> */
 	TOKEN_GREATER_EQ,
 	TOKEN_GREATER,
 	TOKEN_AMPERSAND,
@@ -140,6 +142,7 @@ typedef struct {
 typedef struct {
 	const char *name;
 	size_t size;
+	size_t align;
 	FieldInfo *fields;
 	size_t field_count;
 } TypeInfo;
@@ -183,16 +186,20 @@ typedef struct {
 } Generator;
 
 typedef enum {
-    TAC_ASSIGN,     
-    TAC_BINOP,      
-    TAC_COPY,       
-    TAC_CALL,       
-    TAC_PARAM,      
-    TAC_RETURN,     
-    TAC_LABEL,      
-    TAC_JUMP,       
-    TAC_JUMP_IF,    
-    TAC_JUMP_IF_NOT,
+    TAC_BINOP,        /* arithmetic / compare / shift; op is "+","<<",… */
+    TAC_COPY,         /* plain dest = src1 */
+    TAC_CALL,
+    TAC_PARAM,        /* load arg into reg; emit only after all args computed */
+    TAC_RETURN,
+    TAC_LEA,          /* dest = &src1 (local) */
+    TAC_LOAD,         /* dest = *src1 */
+    TAC_FIELD,        /* dest = src1.src2 */
+    TAC_INDEX,        /* dest = src1[src2] */
+    TAC_NEG,          /* dest = -src2 */
+    TAC_NOT,          /* dest = !src2 */
+    TAC_STORE_FIELD,  /* dest.src2 = src1 */
+    TAC_STORE_INDEX,  /* dest[src2] = src1 */
+    TAC_STORE_DEREF,  /* *dest = src1 */
 } TAC_Op;
 
 typedef struct TAC_Inst TAC_Inst;
@@ -224,10 +231,12 @@ typedef struct {
         [TOKEN_EQ_ASSIGN] = "EQUAL_ASSIGN",
         [TOKEN_NOT_EQ] = "NOT_EQUAL",
         [TOKEN_NOT] = "NOT",
-        [TOKEN_LESS] = "LESS",
-        [TOKEN_LESS_EQ] = "LESS_EQUAL",
-        [TOKEN_GREATER] = "GREATER",
-        [TOKEN_GREATER_EQ] = "GREATER_EQUAL",
+		[TOKEN_LESS] = "LESS",
+		[TOKEN_LESS_EQ] = "LESS_EQUAL",
+		[TOKEN_SHL] = "SHL",
+		[TOKEN_SHR] = "SHR",
+		[TOKEN_GREATER] = "GREATER",
+		[TOKEN_GREATER_EQ] = "GREATER_EQUAL",
         [TOKEN_L_PAREN] = "LPAREN",
         [TOKEN_R_PAREN] = "RPAREN",
         [TOKEN_L_BRACE] = "LBRACE",
@@ -319,6 +328,7 @@ void ASTPrintNode(AST_Node* node, int depth);
 void ASTPrintProgram(AST_Node* program);
 
 int TACGetMaxTemp(TAC_Inst *tac);
+int TACMaxTempsInNode(AST_Node *node, Arena *arena);
 void TACInit(TAC_Builder *tb, Arena *arena);
 char* ExprToTAC(TAC_Builder *tb, AST_Node *node);
 void StmtToTAC(TAC_Builder *tb, AST_Node *node);

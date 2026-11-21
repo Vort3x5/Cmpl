@@ -42,8 +42,11 @@ Requires `cc`, `fasm`, and (for `#library` `.so` demos) `ld` on `PATH`.
 | `examples/BasicJai/structs.jai` | **42** | `struc` + field load/store in `out/out.asm` |
 | `examples/BasicJai/arrays.jai` | **30** | `[N]int` indexing |
 | `examples/BasicJai/for_range.jai` | **55** | Jai-inclusive `0..10` → sum 55 |
-| `examples/BasicJai/defer.jai` | **3** | `defer` LIFO at block end (not yet per-loop-iteration) |
+| `examples/BasicJai/defer.jai` | **3** | `defer` LIFO (block + loop body per iteration) |
 | `examples/BasicJai/pointers.jai` | **108** | `*Type`, `*a`, `b.*` |
+| `examples/BasicJai/nested_call.jai` | **6** | `add(1, add(2, 3))` |
+| `examples/BasicJai/u32_fields.jai` | **5** | sized `u32` field store/load |
+| `examples/BasicJai/shift.jai` | **8** | `1 << 3` |
 | `examples/BasicJai/sse_call_expr.jai` | **4** | `1 + fval(2)` — TAC stack temps / SSE ABI |
 | `examples/BasicJai/arena.jai` | **42** | `#foreign cmpl_rt` → `arena_alloc` |
 | `examples/BasicJai/foreign.jai` | **3** | prints **`Hi`**, `#library` / `#foreign` |
@@ -80,8 +83,10 @@ Details: [examples/vulkan/README.md](examples/vulkan/README.md) · Nix: [`shell.
 - `Name :: …`, `:=`, `name: Type;`, `-> Type`
 - `struct`, field access, fixed `[N]Type` arrays
 - `if` / `while` / `for i: a..b` (**inclusive** ends, per §15/§18)
-- `defer` at block / scope exit (LIFO); loop-body `defer` is not yet per-iteration
+- `defer` at block / scope exit (LIFO), including per loop iteration
 - Pointers: `*Type`, `*addr`, postfix `.*` deref (§10)
+- Shifts: `<<`, `>>`
+- Natural struct field alignment; sized loads/stores for `u8`/`u16`/`u32`
 - FFI: `#library` / `#system_library` + `#foreign lib` (§29); library paths omit `.so`
 - Optional C symbol rename: `#foreign lib "CSymbol"`
 
@@ -96,20 +101,20 @@ Details: [examples/vulkan/README.md](examples/vulkan/README.md) · Nix: [`shell.
 ### 1: Bootstrap
 - [x] Lexer/parser, procs, vars, control flow, FASM macros, calls
 - [x] Inclusive `for` ranges; `#foreign` / `#library`
-- [ ] Full operator set in codegen (`/`, `%`, `!=`, …)
+- [x] Comparisons + shifts (`<<` / `>>`); [ ] `/`, `%` in codegen
 
 ### 2: Memory & Graphics
-- [x] Structs + member access
+- [x] Structs + member access (natural align, sized fields)
 - [x] Fixed arrays `[N]Type`
 - [ ] Slices `[]Type`
-- [x] Defer (block scope)
+- [x] Defer (block + loop)
 - [x] Arena bump (`cmpl_rt`)
-- [x] `#foreign` + real `.so` link (`ld`)
-- [x] Vulkan triangle (headless red pixel via `libcmpl_vk.so`)
-- [x] Wayland surface + on-screen swapchain (`cmpl_vk_window`)
-- [x] Textured sprite (`cmpl_vk_sprite` — procedural RGBA + sampler)
-- [x] `!=` in codegen (player loop)
-- [x] Moving player: Jai owns `x/y` + loop; C is open/poll/key/draw/close
+- [x] `#foreign` + real `.so` link
+- [x] Direct Vulkan FFI (`vulkan_ffi.jai` → `vkCreateInstance`)
+- [x] Vulkan triangle via C helper `libcmpl_vk` (legacy — shrink, don’t grow)
+- [x] Wayland/XCB window via C helper (legacy)
+- [x] Textured sprite via C helper (legacy)
+- [x] Moving player via C helper session API (legacy; Jai owns loop)
 
 ### 3–6
 See earlier roadmap: enums, pointers-as-first-class APIs, `#run`, SIMD/`#soa`, self-hosting.
