@@ -16,6 +16,7 @@ pkgs.mkShell {
     wayland
     wayland-scanner
     wayland-protocols
+    libxcb
     # ICD providers for headless / real GPU at runtime
     mesa
   ];
@@ -24,11 +25,14 @@ pkgs.mkShell {
     pkgs.vulkan-loader
     pkgs.mesa
     pkgs.wayland
+    pkgs.libxcb
   ];
 
   shellHook = ''
     echo "Cmpl nix shell: fasm=$(command -v fasm)"
     echo "  vulkan=$(pkg-config --libs vulkan 2>/dev/null || echo '-lvulkan')"
     echo "  wayland=$(pkg-config --libs wayland-client 2>/dev/null || echo '-lwayland-client')"
+    echo "  xcb=$(pkg-config --libs xcb 2>/dev/null || echo '-lxcb')"
+    echo "  DISPLAY=$DISPLAY  WAYLAND_DISPLAY=$WAYLAND_DISPLAY"
   '';
 }

@@ -38,7 +38,9 @@ bool BuildVulkanSo(void)
     const char *out = "examples/vulkan/libcmpl_vk.so";
     const char *inputs[] = {
         "examples/vulkan/cmpl_vk.c",
+        "examples/vulkan/cmpl_vk_present.c",
         "examples/vulkan/cmpl_vk_wl.c",
+        "examples/vulkan/cmpl_vk_xcb.c",
         "examples/vulkan/wayland/xdg-shell-protocol.c",
     };
 
@@ -56,7 +58,7 @@ bool BuildVulkanSo(void)
                    "-I", "examples/vulkan/include",
                    "-I", "examples/vulkan",
                    "-o", out,
-                   inputs[0], inputs[1], inputs[2]);
+                   inputs[0], inputs[1], inputs[2], inputs[3], inputs[4]);
 
     const char *vk = FindSharedLib("libvulkan.so");
     if (vk) {
@@ -74,6 +76,15 @@ bool BuildVulkanSo(void)
     } else {
         nob_log(NOB_INFO, "libwayland-client.so not found — trying -lwayland-client");
         nob_cmd_append(&cmd, "-lwayland-client");
+    }
+
+    const char *xcb = FindSharedLib("libxcb.so");
+    if (xcb) {
+        nob_log(NOB_INFO, "Linking XCB via %s", xcb);
+        nob_cmd_append(&cmd, xcb);
+    } else {
+        nob_log(NOB_INFO, "libxcb.so not found — trying -lxcb");
+        nob_cmd_append(&cmd, "-lxcb");
     }
 
     if (!nob_cmd_run(&cmd)) {

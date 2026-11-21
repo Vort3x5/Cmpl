@@ -9,7 +9,9 @@ Game milestone 1: prove Vulkan works end-to-end from a `.jai` entry point.
 | `include/vulkan/` | Vendored Vulkan-Headers (v1.2.198) |
 | `shaders/tri.*.spv` | Minimal red-triangle SPIR-V |
 | `cmpl_vk.c` | Headless renderer (`cmpl_vk_triangle`) |
-| `cmpl_vk_wl.c` | Wayland + swapchain (`cmpl_vk_window`) |
+| `cmpl_vk_present.c` | Shared swapchain + red triangle |
+| `cmpl_vk_wl.c` | Wayland host |
+| `cmpl_vk_xcb.c` | X11/XCB host (bspwm, i3, …) |
 | `wayland/` | Vendored xdg-shell protocol |
 | `libcmpl_vk.so` | Built by `./nob all` / `./nob vk` |
 | `../BasicJai/vulkan_triangle.jai` | Headless Jai driver |
@@ -49,7 +51,14 @@ CMPL_VK_FRAMES=120 ./out/out; echo $?
 ```
 
 **Expect:** window titled `Cmpl Vulkan` with a red triangle; stderr `presented N frames`; **exit 0**.  
-No compositor → exit **10**. `CMPL_VK_FRAMES=0` runs until the window is closed.
+`cmpl_vk_window` picks **Wayland** if `WAYLAND_DISPLAY` is set, otherwise **XCB** if `DISPLAY` is set (bspwm/X11).  
+Neither → exit **10**. `CMPL_VK_FRAMES=0` runs until the window is closed.
+
+On pure X11, `nix-shell` alone does not create Wayland — XCB is the right path. Nested Weston is optional:
+
+```bash
+nix-shell -p weston --run 'weston --backend=x11-backend.so --socket=cmpl-wl & sleep 1; WAYLAND_DISPLAY=cmpl-wl CMPL_VK_FRAMES=60 ./out/out'
+```
 
 ## Notes
 
