@@ -96,7 +96,7 @@ static void wl_poll(void *ctx) {
     wl_display_dispatch_pending(wl->display);
 }
 
-int cmpl_vk_window_wayland(void) {
+int cmpl_vk_window_wayland(CmplVkDrawMode draw) {
     WlState wl = {0};
     wl.width = 800;
     wl.height = 600;
@@ -123,7 +123,8 @@ int cmpl_vk_window_wayland(void) {
     xdg_surface_add_listener(wl.xdg_surface, &xdg_surface_listener, &wl);
     wl.toplevel = xdg_surface_get_toplevel(wl.xdg_surface);
     xdg_toplevel_add_listener(wl.toplevel, &toplevel_listener, &wl);
-    xdg_toplevel_set_title(wl.toplevel, "Cmpl Vulkan");
+    xdg_toplevel_set_title(wl.toplevel,
+        draw == CMPL_VK_DRAW_SPRITE ? "Cmpl Sprite" : "Cmpl Vulkan");
     wl_surface_commit(wl.surface);
 
     while (!wl.configured)
@@ -164,6 +165,7 @@ int cmpl_vk_window_wayland(void) {
         .poll_events = wl_poll,
         .poll_ctx = &wl,
         .log_tag = "cmpl_vk_wl",
+        .draw = draw,
     };
     int rc = cmpl_vk_run_swapchain(&host);
 

@@ -65,7 +65,9 @@ Vulkan (needs `libvulkan` + Wayland for the window — on Nix use the shell):
 nix-shell          # or: nix develop
 ./nob all          # builds out/cmpl + examples/vulkan/libcmpl_vk.so
 ./out/cmpl examples/BasicJai/vulkan_triangle.jai && ./out/out; echo $?   # headless red pixel
-./out/cmpl examples/BasicJai/vulkan_window.jai && CMPL_VK_FRAMES=90 ./out/out; echo $?  # Wayland
+./out/cmpl examples/BasicJai/vulkan_window.jai && CMPL_VK_FRAMES=90 ./out/out; echo $?  # on-screen triangle
+./out/cmpl examples/BasicJai/vulkan_sprite.jai && CMPL_VK_FRAMES=90 ./out/out; echo $?   # textured sprite
+./out/cmpl examples/BasicJai/vulkan_player.jai && CMPL_VK_FRAMES=120 ./out/out; echo $?  # moving player (Jai loop)
 ```
 
 Details: [examples/vulkan/README.md](examples/vulkan/README.md) · Nix: [`shell.nix`](shell.nix) / [`flake.nix`](flake.nix)
@@ -104,6 +106,9 @@ Details: [examples/vulkan/README.md](examples/vulkan/README.md) · Nix: [`shell.
 - [x] `#foreign` + real `.so` link (`ld`)
 - [x] Vulkan triangle (headless red pixel via `libcmpl_vk.so`)
 - [x] Wayland surface + on-screen swapchain (`cmpl_vk_window`)
+- [x] Textured sprite (`cmpl_vk_sprite` — procedural RGBA + sampler)
+- [x] `!=` in codegen (player loop)
+- [x] Moving player: Jai owns `x/y` + loop; C is open/poll/key/draw/close
 
 ### 3–6
 See earlier roadmap: enums, pointers-as-first-class APIs, `#run`, SIMD/`#soa`, self-hosting.
@@ -113,9 +118,9 @@ See earlier roadmap: enums, pointers-as-first-class APIs, `#run`, SIMD/`#soa`, s
 | Phase | Game Goal | Technical Focus |
 |-------|-----------|----------------|
 | 1 | Vulkan triangle | `#foreign` + `libvulkan` |
-| 1b | On-screen triangle | Wayland + swapchain |
-| 2 | Textured sprites | Memory / slices |
-| 3 | Moving player | Game logic |
+| 1b | On-screen triangle | Wayland / XCB + swapchain |
+| 2 | Textured sprites | Image + sampler + textured quad |
+| 3 | Moving player | Jai loop + position; thin C session API |
 | 4 | NPCs and dialog | Data-driven content |
 | 5 | Full gameplay | FASM SIMD / `#soa` |
 | 6 | Polished release | Advanced language features |

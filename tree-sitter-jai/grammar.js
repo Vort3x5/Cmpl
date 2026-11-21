@@ -1,3 +1,4 @@
+// Tree-sitter grammar for Cmpl's Jai subset (aligned with examples/BasicJai).
 module.exports = grammar({
   name: 'jai',
 
@@ -8,24 +9,55 @@ module.exports = grammar({
 
   word: $ => $.identifier,
 
+  conflicts: $ => [
+    // `*x` can start a type or an address-of expression in edge cases
+    [$.pointer_type, $.unary_expression],
+  ],
+
   rules: {
     source_file: $ => repeat($._declaration),
 
     _declaration: $ => choice(
+      $.library_declaration,
       $.procedure_declaration,
       $.struct_declaration,
       $._statement,
     ),
 
-    // Procedure: name :: (params) -> return_type { body }
+    // name :: #library "path";
+    // name :: #system_library "vulkan";
+    library_declaration: $ => seq(
+      field('name', $.identifier),
+      '::',
+      '#',
+      field('kind', choice('library', 'system_library')),
+      field('path', $.string),
+      ';',
+    ),
+
+    // name :: (params) -> T { body }
+    // name :: (params) -> T #foreign lib;
+    // name :: (params) #foreign lib;
+    // name :: (params) -> T #foreign lib "CSymbol";
     procedure_declaration: $ => seq(
       field('name', $.identifier),
       '::',
       '(',
       optional($.parameter_list),
       ')',
-      optional(seq('->', field('return_type', $.identifier))),
-      field('body', $.block),
+      optional(seq('->', field('return_type', $.type))),
+      choice(
+        field('body', $.block),
+        $.foreign_clause,
+      ),
+    ),
+
+    foreign_clause: $ => seq(
+      '#',
+      'foreign',
+      field('library', $.identifier),
+      optional(field('symbol', $.string)),
+      ';',
     ),
 
     parameter_list: $ => seq(
@@ -35,10 +67,10 @@ module.exports = grammar({
 
     parameter: $ => seq(
       field('name', $.identifier),
-      optional(seq(':', field('type', $.identifier))),
+      optional(seq(':', field('type', $.type))),
     ),
 
-    // Struct: Name :: struct { fields }
+    // Name :: struct { fields }
     struct_declaration: $ => seq(
       field('name', $.identifier),
       '::',
@@ -51,8 +83,24 @@ module.exports = grammar({
     struct_field: $ => seq(
       field('name', $.identifier),
       ':',
-      field('type', $.identifier),
+      field('type', $.type),
       ';',
+    ),
+
+    // Types: int | *Type | [N]Type
+    type: $ => choice(
+      $.identifier,
+      $.pointer_type,
+      $.array_type,
+    ),
+
+    pointer_type: $ => prec.left(2, seq('*', field('to', $.type))),
+
+    array_type: $ => seq(
+      '[',
+      field('length', $.number),
+      ']',
+      field('element', $.type),
     ),
 
     // Statements
@@ -62,6 +110,8 @@ module.exports = grammar({
       $.if_statement,
       $.for_statement,
       $.while_statement,
+      $.defer_statement,
+      $.typed_declaration,
       $.assignment_statement,
       $.expression_statement,
     ),
@@ -78,12 +128,15 @@ module.exports = grammar({
       ';',
     ),
 
+    defer_statement: $ => seq(
+      'defer',
+      field('body', $._statement),
+    ),
+
+    // Condition must prefer full exprs like `f(0) > 0` over bare `f`.
     if_statement: $ => prec.right(seq(
       'if',
-      field('condition', choice(
-        seq('(', $._expression, ')'),
-        $._expression,
-      )),
+      field('condition', prec.dynamic(1, $._expression)),
       field('consequence', $._statement),
       optional(seq('else', field('alternative', $._statement))),
     )),
@@ -100,22 +153,27 @@ module.exports = grammar({
 
     while_statement: $ => seq(
       'while',
-      field('condition', choice(
-        seq('(', $._expression, ')'),
-        $._expression,
-      )),
+      field('condition', prec.dynamic(1, $._expression)),
       field('body', $._statement),
     ),
 
+    // name: Type;
+    typed_declaration: $ => seq(
+      field('name', $.identifier),
+      ':',
+      field('type', $.type),
+      ';',
+    ),
+
     assignment_statement: $ => choice(
-      // Variable declaration: name := value;
+      // name := value;
       seq(
         field('left', $.identifier),
         ':=',
         field('right', $._expression),
         ';',
       ),
-      // Regular assignment: lhs = rhs;
+      // lhs = rhs;  (includes << ptr = val, arr[i] = val, p.x = val)
       seq(
         field('left', $._expression),
         '=',
@@ -129,24 +187,19 @@ module.exports = grammar({
       ';',
     ),
 
-    // Expressions (with proper precedence)
+    // Expressions — layered so `f(0) > 0` parses as a comparison of a call.
     _expression: $ => choice(
       $.binary_expression,
       $.unary_expression,
-      $.call_expression,
-      $.index_expression,
-      $.field_access,
-      $.parenthesized_expression,
-      $.number,
-      $.identifier,
+      $._postfix_expression,
     ),
 
     binary_expression: $ => {
       const table = [
-        [prec.left, 1, choice('==', '!=')],                    // equality
-        [prec.left, 2, choice('<', '<=', '>', '>=')],          // comparison
-        [prec.left, 3, choice('+', '-')],                      // term
-        [prec.left, 4, choice('*', '/', '%')],                 // factor
+        [prec.left, 1, choice('==', '!=')],
+        [prec.left, 2, choice('<', '<=', '>', '>=')],
+        [prec.left, 3, choice('+', '-')],
+        [prec.left, 4, choice('*', '/', '%')],
       ];
 
       return choice(...table.map(([assoc, precedence, operator]) =>
@@ -158,13 +211,21 @@ module.exports = grammar({
       ));
     },
 
+    // ! - * (addr-of)  << (deref)
     unary_expression: $ => prec.right(5, seq(
-      field('operator', choice('!', '-')),
+      field('operator', choice('!', '-', '*', '<<')),
       field('operand', $._expression),
     )),
 
+    _postfix_expression: $ => choice(
+      $.call_expression,
+      $.index_expression,
+      $.field_access,
+      $._primary_expression,
+    ),
+
     call_expression: $ => prec(10, seq(
-      field('function', $._expression),
+      field('function', $._postfix_expression),
       '(',
       optional($.argument_list),
       ')',
@@ -176,28 +237,36 @@ module.exports = grammar({
     ),
 
     index_expression: $ => prec(10, seq(
-      field('array', $._expression),
+      field('array', $._postfix_expression),
       '[',
       field('index', $._expression),
       ']',
     )),
 
     field_access: $ => prec(10, seq(
-      field('object', $._expression),
+      field('object', $._postfix_expression),
       '.',
       field('field', $.identifier),
     )),
 
-    parenthesized_expression: $ => prec(1, seq(
+    _primary_expression: $ => choice(
+      $.parenthesized_expression,
+      $.number,
+      $.string,
+      $.identifier,
+    ),
+
+    parenthesized_expression: $ => seq(
       '(',
       $._expression,
       ')',
-    )),
+    ),
 
-    // Terminals
     identifier: $ => /[a-zA-Z_][a-zA-Z0-9_]*/,
 
     number: $ => /\d+/,
+
+    string: $ => /"([^"\\]|\\.)*"/,
 
     comment: $ => token(choice(
       seq('//', /.*/),

@@ -145,6 +145,10 @@ static void GenBinOpStmt(Generator *g, AST_Node *node)
         GenEmit(g, "    cmp rax, rbx\n");
         GenEmit(g, "    mov rax, 0\n");
         GenEmit(g, "    sete al\n");
+    } else if (strcmp(op, "!=") == 0) {
+        GenEmit(g, "    cmp rax, rbx\n");
+        GenEmit(g, "    mov rax, 0\n");
+        GenEmit(g, "    setne al\n");
     } else if (strcmp(op, "<") == 0) {
         GenEmit(g, "    cmp rax, rbx\n");
         GenEmit(g, "    mov rax, 0\n");

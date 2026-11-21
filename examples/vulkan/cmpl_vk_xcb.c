@@ -41,7 +41,7 @@ static void xcb_poll(void *ctx) {
     }
 }
 
-int cmpl_vk_window_xcb(void) {
+int cmpl_vk_window_xcb(CmplVkDrawMode draw) {
     XcbState x = {0};
     x.width = 800;
     x.height = 600;
@@ -86,7 +86,7 @@ int cmpl_vk_window_xcb(void) {
     free(proto_r);
     free(del_r);
 
-    const char *title = "Cmpl Vulkan";
+    const char *title = draw == CMPL_VK_DRAW_SPRITE ? "Cmpl Sprite" : "Cmpl Vulkan";
     xcb_change_property(x.conn, XCB_PROP_MODE_REPLACE, x.window,
                         XCB_ATOM_WM_NAME, XCB_ATOM_STRING, 8,
                         (uint32_t)strlen(title), title);
@@ -129,6 +129,7 @@ int cmpl_vk_window_xcb(void) {
         .poll_events = xcb_poll,
         .poll_ctx = &x,
         .log_tag = "cmpl_vk_xcb",
+        .draw = draw,
     };
     int rc = cmpl_vk_run_swapchain(&host);
 

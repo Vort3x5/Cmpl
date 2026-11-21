@@ -17,6 +17,10 @@ pkgs.mkShell {
     wayland-scanner
     wayland-protocols
     libxcb
+    shaderc   # optional: rebuild examples/vulkan/shaders/*.spv
+    # tree-sitter grammar regen (see tree-sitter-jai/); no global npm
+    nodejs
+    tree-sitter
     # ICD providers for headless / real GPU at runtime
     mesa
   ];

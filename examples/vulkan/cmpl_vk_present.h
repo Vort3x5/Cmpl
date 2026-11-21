@@ -2,6 +2,11 @@
 #include <vulkan/vulkan.h>
 #include <stdint.h>
 
+typedef enum CmplVkDrawMode {
+    CMPL_VK_DRAW_TRIANGLE = 0,
+    CMPL_VK_DRAW_SPRITE = 1,
+} CmplVkDrawMode;
+
 typedef struct CmplVkWindowHost {
     VkInstance instance;
     VkSurfaceKHR surface;
@@ -11,11 +16,12 @@ typedef struct CmplVkWindowHost {
     void (*poll_events)(void *ctx);
     void *poll_ctx;
     const char *log_tag;
+    CmplVkDrawMode draw;
 } CmplVkWindowHost;
 
 int cmpl_vk_frame_limit(void);
-/* Present red triangle until *running==0 or frame limit. Does not destroy instance/surface. */
+/* Present until *running==0 or frame limit. Does not destroy instance/surface. */
 int cmpl_vk_run_swapchain(CmplVkWindowHost *host);
 
-int cmpl_vk_window_wayland(void);
-int cmpl_vk_window_xcb(void);
+int cmpl_vk_window_wayland(CmplVkDrawMode draw);
+int cmpl_vk_window_xcb(CmplVkDrawMode draw);

@@ -6,6 +6,10 @@
   "for"
   "while"
   "struct"
+  "defer"
+  "foreign"
+  "library"
+  "system_library"
 ] @keyword
 
 ; Operators
@@ -15,6 +19,7 @@
   ":="
   "="
   "->"
+  ".."
   "+"
   "-"
   "*"
@@ -27,6 +32,8 @@
   ">"
   ">="
   "!"
+  "<<"
+  "#"
 ] @operator
 
 ; Punctuation
@@ -42,18 +49,31 @@
   ";"
 ] @punctuation.bracket
 
-; Procedure Declarations
+; Library / foreign
+(library_declaration
+  name: (identifier) @constant)
+
+(foreign_clause
+  library: (identifier) @constant)
+
+; Procedures
 (procedure_declaration
   name: (identifier) @function)
 
-; Struct Declarations
+; Structs / types
 (struct_declaration
   name: (identifier) @type)
 
-; Function Calls
+(type (identifier) @type)
+(pointer_type "*" @operator)
+(array_type) @type
+
+; Calls
 (call_expression
   function: (identifier) @function.call)
 
-; Numbers and Comments
+; Literals
 (number) @number
+(string) @string
 (comment) @comment
+(identifier) @variable

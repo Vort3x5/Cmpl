@@ -41,6 +41,7 @@ bool BuildVulkanSo(void)
         "examples/vulkan/cmpl_vk_present.c",
         "examples/vulkan/cmpl_vk_wl.c",
         "examples/vulkan/cmpl_vk_xcb.c",
+        "examples/vulkan/cmpl_vk_game.c",
         "examples/vulkan/wayland/xdg-shell-protocol.c",
     };
 
@@ -58,7 +59,7 @@ bool BuildVulkanSo(void)
                    "-I", "examples/vulkan/include",
                    "-I", "examples/vulkan",
                    "-o", out,
-                   inputs[0], inputs[1], inputs[2], inputs[3], inputs[4]);
+                   inputs[0], inputs[1], inputs[2], inputs[3], inputs[4], inputs[5]);
 
     const char *vk = FindSharedLib("libvulkan.so");
     if (vk) {
